@@ -46,8 +46,9 @@ class Catalog:
     def allowed_tables(self, db: DbName) -> set[str]:
         return {t.name for t in self.tables.values() if t.db == db}
 
-    def render(self, table_names: list[str]) -> str:
-        """Compact text for the AI prompt: one block per table, one line per column."""
+    def render(self, table_names: list[str], hidden: set[str] = frozenset()) -> str:
+        """Compact text for the AI prompt: one block per table, one line per column.
+        Columns named in `hidden` ("table.column") are left out (e.g. totals a patient may not see)."""
         blocks = []
         for name in table_names:
             t = self.tables.get(name)
@@ -55,6 +56,8 @@ class Catalog:
                 continue
             lines = [f"TABLE {t.name}" + (f"  -- {t.description}" if t.description else "")]
             for c in t.columns:
+                if f"{t.name}.{c.name}" in hidden:
+                    continue
                 notes = [n for n in (c.description, c.values and "values: " + ", ".join(f"'{v}'" for v in c.values)) if n]
                 lines.append(f"  {c.name} {c.type}" + (f"  -- {'; '.join(notes)}" if notes else ""))
             blocks.append("\n".join(lines))

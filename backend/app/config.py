@@ -6,6 +6,7 @@ live inside the code. Every other part of the app asks get_settings() instead of
 hard-coding anything.
 """
 
+import hashlib
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -34,6 +35,10 @@ class Settings(BaseSettings):
     # Password of the read-only "chatbot_ro" account the chatbot uses in BOTH databases
     ro_password: str = ""
 
+    # Key that signs the "who is asking" note for PostgreSQL row-level security.
+    # Optional: if empty, it is derived from the PostgreSQL admin password.
+    rls_secret: str = ""
+
     # Which AI service writes SQL and answers
     llm_provider: Literal["groq", "gemini", "ollama"] = "groq"
     groq_api_key: str | None = None
@@ -50,6 +55,12 @@ class Settings(BaseSettings):
     rows_to_llm: int = 50
 
     data_dir: Path = BACKEND_DIR / "data"
+
+    def rls_key(self) -> str:
+        """The signing key: RLS_SECRET if set, otherwise derived from the PG admin password."""
+        if self.rls_secret:
+            return self.rls_secret
+        return hashlib.sha256(f"aether-rls|{self.pg_admin_password}".encode()).hexdigest()
 
     def clinical_url(self, admin: bool = False) -> str:
         """Connection address for PostgreSQL clinical_db (read-only user unless admin=True)."""

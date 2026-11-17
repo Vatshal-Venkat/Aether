@@ -61,3 +61,9 @@ def test_number_words_are_checked_too():
 
 def test_invented_money_flagged():
     assert check("Insurance paid $9,999.00 in total.", [[120.0]]) == ["$9,999.00"]
+
+
+def test_number_word_that_is_part_of_the_data_is_fine():
+    # Found in Plan 2: a provider named "Dr Two" was flagged as the number 2.
+    assert find_unverified_numbers("The doctor is Dr Two.", [["Dr Two"]], "Who is doctor d2?", set()) == []
+    assert find_unverified_numbers("Seven patients", [["Dr Two"]], "q", set()) == ["Seven"]

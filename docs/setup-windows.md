@@ -52,6 +52,10 @@ python -m scripts.setup_databases --reset
 
 If you already downloaded Synthea, unzip it into `backend/data/synthea/` and the script reuses it.
 
+**Changed the PostgreSQL admin password or `RLS_SECRET` later?** Re-apply only the privacy rules
+(fast, keeps all data): `python -m scripts.setup_databases --rls-only`. Otherwise patient-mode and
+clinician-mode questions will return no rows, because the signature check no longer matches.
+
 ## 7. Check everything
 ```bash
 python -m pytest

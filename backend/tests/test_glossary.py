@@ -24,3 +24,34 @@ def test_glossary_columns_reference_known_tables():
     for key in load_glossary().columns:
         table, _, column = key.partition(".")
         assert table in TABLE_SPLIT and column, key
+
+
+def test_links_loaded():
+    links = load_glossary().links
+    assert len(links) == 7
+    assert "encounters.provider = providers.id" in links
+
+
+def test_blocked_columns_by_role():
+    g = load_glossary()
+    pii = {"patients.ssn", "patients.drivers", "patients.passport"}
+    assert g.blocked_columns("clinician") == pii
+    assert g.blocked_columns("patient") >= pii | {"payers.revenue", "providers.encounters", "organizations.utilization"}
+    assert len(g.blocked_columns("patient")) == 3 + 14 + 2 + 2
+
+
+def test_payment_amount_semantics():
+    # Live test C9: PAYMENT rows keep the paid money in `payments`; `amount` is empty for them.
+    g = load_glossary()
+    assert "payments" in g.columns["claims_transactions.amount"]
+    hint = next(t for t in g.terms if t.term.startswith("insurance payment")).sql_hint
+    assert "payments" in hint
+
+
+def test_outstanding_balance_term():
+    # Live test X2: the AI summed claims_transactions.outstanding (a per-line running balance) -> 779k instead of 211.
+    from app.graph.nodes.inject_schema import _matching_terms
+    g = load_glossary()
+    hits = _matching_terms("What is the total outstanding patient balance on claims?", g.terms)
+    assert any("outstandingp" in t.sql_hint for t in hits)
+    assert "not" in g.columns["claims_transactions.outstanding"].lower()

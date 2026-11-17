@@ -61,8 +61,12 @@ WORD = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", re.IGNORECASE)
 def find_unverified_numbers(answer: str, rows: list[list[Any]], question: str, extra_allowed: set[float]) -> list[str]:
     allowed = _allowed_numbers(rows, question, extra_allowed)
     text = LIST_MARKER.sub("", answer)
+    # Number words that are part of the data or question (a doctor called "Dr Two") are not counts.
+    quoted_words = {w.lower() for cell in [question, *(c for r in rows for c in r if isinstance(c, str))]
+                    for w in WORD.findall(cell)}
     bad = [m.group(0) for m in WORD.finditer(text)
-           if not _matches(float(NUMBER_WORDS[m.group(0).lower()]), 0, False, allowed)]
+           if m.group(0).lower() not in quoted_words
+           and not _matches(float(NUMBER_WORDS[m.group(0).lower()]), 0, False, allowed)]
     for m in NUMBER.finditer(text):
         dollar, whole, frac, pct = m.groups()
         value = float(whole.replace(",", "") + (frac or ""))

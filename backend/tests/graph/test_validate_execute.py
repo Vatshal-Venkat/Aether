@@ -36,12 +36,12 @@ def test_error_after_limit_fails():
 
 
 def test_success_moves_on():
-    assert after_validate({"attempts": [_attempt("SELECT 1")]}, max_attempts=3) == "execute"
+    assert after_validate({"attempts": [_attempt("SELECT 1")]}, max_attempts=3) == "row_filter"
 
 
 def test_empty_result_does_not_retry():
     state = {"attempts": [_attempt("SELECT 1")], "result": QueryResult(columns=["a"], rows=[], total_rows=0, truncated=False)}
-    assert after_execute(state, max_attempts=3) == "synthesize"
+    assert after_execute(state, max_attempts=3) == "next_step"
 
 
 # --- validate (pure) -----------------------------------------------------------------------
@@ -136,3 +136,18 @@ def test_execute_patient_mode_filters():
     out = execute({"db": "clinical", "final_sql": "SELECT count(*) AS n FROM encounters",
                    "attempts": [_attempt("x")], "role": "patient", "patient_id": pid}, deps)
     assert out["result"].rows == [[n]]
+
+
+@pytest.mark.parametrize("role, sql, ok", [
+    ("patient", "SELECT sum(amount_covered) FROM payers", False),
+    ("patient", "SELECT * FROM organizations", False),
+    ("patient", "SELECT p.encounters FROM providers p", False),
+    ("patient", "SELECT name, phone FROM payers", True),
+    ("clinician", "SELECT sum(amount_covered) FROM payers", True),
+    ("clinician", "SELECT * FROM organizations", True),
+])
+def test_patient_mode_blocks_population_columns(role, sql, ok):
+    state = {"db": "billing", "role": role, "patient_id": "p1" if role == "patient" else None,
+             "attempts": [_attempt(sql)]}
+    out = validate(state, make_deps(ScriptedLLM()))
+    assert (out["final_sql"] is not None) == ok, out["attempts"][-1]["error"]

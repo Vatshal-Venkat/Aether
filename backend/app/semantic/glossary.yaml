@@ -53,7 +53,9 @@ columns:
   claims.outstanding1: Amount still owed by the primary insurer.
   claims.outstandingp: Amount still owed by the patient.
   claims_transactions.type: "CHARGE, PAYMENT, ADJUSTMENT, TRANSFERIN, TRANSFEROUT."
-  claims_transactions.amount: Money amount of the line item.
+  claims_transactions.amount: "Money amount of CHARGE and TRANSFERIN rows. EMPTY (NULL) on PAYMENT rows: the money paid is in claims_transactions.payments."
+  claims_transactions.payments: "Amount paid, on rows with type = 'PAYMENT'."
+  claims_transactions.outstanding: "Running balance of one line item. Do NOT sum it for totals owed — use claims.outstandingp (patient) or claims.outstanding1 / outstanding2 (insurers)."
   providers.speciality: Medical speciality of the provider.
   payers.name: Insurer name (NO_INSURANCE means uninsured).
 
@@ -108,7 +110,11 @@ terms:
     db: clinical
   - term: insurance payment / amount owed
     meaning: Authoritative money questions about claims, payments and balances come from billing_db.
-    sql_hint: "claims_transactions (type = 'PAYMENT'), claims.outstanding1 / outstandingp"
+    sql_hint: "paid: SUM(claims_transactions.payments) WHERE type = 'PAYMENT' (amount is NULL there); still owed: claims.outstanding1 / outstandingp"
+    db: billing
+  - term: outstanding balance / balance / owe / owed
+    meaning: Money still unpaid on claims — by the patient (outstandingp) or by the primary/secondary insurer.
+    sql_hint: "patient still owes: SUM(claims.outstandingp); insurers still owe: SUM(claims.outstanding1 + claims.outstanding2). Not claims_transactions.outstanding."
     db: billing
 
 pii_columns:
@@ -116,11 +122,41 @@ pii_columns:
   - patients.drivers
   - patients.passport
 
-join_keys:
+join_keys:   # joins inside ONE database
   - encounters.patient = patients.id
-  - encounters.provider = providers.id   (cross-database)
-  - encounters.organization = organizations.id   (cross-database)
-  - encounters.payer = payers.id   (cross-database)
-  - claims.patientid = patients.id   (cross-database)
   - claims_transactions.claimid = claims.id
+  - claims.providerid = providers.id
   - providers.organization = organizations.id
+
+# Joins ACROSS the two databases (clinical side first). The planner may only use these;
+# code passes the ids from one database to the other.
+links:
+  - encounters.provider = providers.id
+  - encounters.organization = organizations.id
+  - encounters.payer = payers.id
+  - medications.payer = payers.id
+  - patients.id = claims.patientid
+  - patients.id = payer_transitions.patient
+  - patients.id = claims_transactions.patientid
+
+# Totals computed across ALL patients. A patient must not see them (they describe other
+# people), so in patient mode they are hidden from the AI and blocked by the safety check.
+patient_hidden_columns:
+  - payers.amount_covered
+  - payers.amount_uncovered
+  - payers.revenue
+  - payers.covered_encounters
+  - payers.uncovered_encounters
+  - payers.covered_medications
+  - payers.uncovered_medications
+  - payers.covered_procedures
+  - payers.uncovered_procedures
+  - payers.covered_immunizations
+  - payers.uncovered_immunizations
+  - payers.unique_customers
+  - payers.qols_avg
+  - payers.member_months
+  - organizations.revenue
+  - organizations.utilization
+  - providers.encounters
+  - providers.procedures

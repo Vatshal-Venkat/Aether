@@ -62,7 +62,8 @@ def test_generate_sql_appends_attempt():
     llm = ScriptedLLM("```sql\nSELECT count(*) FROM patients\n```")
     state = {"question": "How many patients?", **CLINICIAN, "schema_text": "TABLE patients", "attempts": []}
     out = generate_sql(state, make_deps(llm))
-    assert out["attempts"] == [{"sql": "SELECT count(*) FROM patients", "error": None}]
+    assert out["attempts"] == [{"step": 0, "db": "clinical", "sql": "SELECT count(*) FROM patients",
+                                "executed": None, "error": None}]
     assert "PostgreSQL" in llm.prompt_text()
 
 

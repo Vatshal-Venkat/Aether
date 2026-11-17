@@ -22,7 +22,7 @@ def validate(state: ChatState, deps: Deps) -> dict:
         attempts[-1]["sql"],
         DIALECTS[db],
         allowed_tables=deps.catalog.allowed_tables(db),
-        blocked_columns=set(deps.glossary.pii_columns),
+        blocked_columns=deps.glossary.blocked_columns(state["role"]),
         # +1 so execute can tell "exactly the cap" from "more rows exist" (truncated flag).
         default_limit=deps.settings.rows_stored_cap + 1,
     )

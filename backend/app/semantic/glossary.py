@@ -23,6 +23,15 @@ class Glossary(BaseModel):
     terms: list[Term]
     pii_columns: list[str]
     join_keys: list[str]
+    links: list[str] = []                   # cross-database joins, "clinical.col = billing.col"
+    patient_hidden_columns: list[str] = []  # population totals a patient may not see
+
+    def blocked_columns(self, role: str) -> set[str]:
+        """Columns the AI may never use: private ones always, population totals in patient mode."""
+        blocked = set(self.pii_columns)
+        if role == "patient":
+            blocked |= set(self.patient_hidden_columns)
+        return blocked
 
 
 def load_glossary(path: Path | None = None) -> Glossary:

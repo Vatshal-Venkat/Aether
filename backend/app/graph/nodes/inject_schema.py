@@ -6,12 +6,15 @@ question (table name, description, column names), add a big bonus when a glossar
 the question points at that table (e.g. "HbA1c" -> observations), and keep the top few.
 The patients table is always included because almost every question involves a person.
 The matching glossary entries are attached too, so the AI knows exactly how to find "HbA1c".
+For a two-step plan, only the current step's database and sub-question are used, and the table
+that links the two steps is always shown. In patient mode, population totals are left out.
 """
 
 import re
 
 from app.graph.deps import Deps
 from app.graph.state import ChatState
+from app.graph.steps import current_step
 from app.graph.timing import timed
 from app.semantic.glossary import Term
 
@@ -42,11 +45,14 @@ def _matching_terms(question: str, terms: list[Term]) -> list[Term]:
 
 @timed("inject_schema")
 def inject_schema(state: ChatState, deps: Deps) -> dict:
-    databases = state["route"].databases or ["clinical"]
-    candidates = [t for db in databases for t in deps.catalog.for_db(db)]
-    q_words = _words(state["question"])
-    terms = [t for t in _matching_terms(state["question"], deps.glossary.terms) if t.db in databases]
+    step = current_step(state)
+    databases = [step.db]
+    candidates = deps.catalog.for_db(step.db)
+    q_words = _words(step.goal)
+    terms = [t for t in _matching_terms(step.goal, deps.glossary.terms) if t.db in databases]
     hinted = " ".join(t.sql_hint.lower() for t in terms)
+    link = state.get("link")
+    link_table = (link.from_table if state.get("step", 0) == 0 else link.to_table) if link else None
 
     scores: dict[str, int] = {}
     for table in candidates:
@@ -62,8 +68,12 @@ def inject_schema(state: ChatState, deps: Deps) -> dict:
     chosen = ranked[:MAX_TABLES]
     if "patients" in scores and "patients" not in chosen:
         chosen = ["patients", *chosen[: MAX_TABLES - 1]]
+    if link_table and link_table not in chosen:  # the table that connects the two steps must be shown
+        chosen = [link_table, *chosen[: MAX_TABLES - 1]]
 
-    text = deps.catalog.render(chosen)
+    # Patient mode: hide population totals (PII is already absent from the catalog).
+    hidden = deps.glossary.blocked_columns(state["role"]) - set(deps.glossary.pii_columns)
+    text = deps.catalog.render(chosen, hidden=hidden)
     if terms:
         text += "\n\nGLOSSARY:\n" + "\n".join(f"- {t.term}: {t.meaning} SQL hint: {t.sql_hint}" for t in terms)
     return {"schema_text": text}

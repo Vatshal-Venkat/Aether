@@ -7,7 +7,8 @@ Plain English:
   4. As a last safety net, drop any private column (ssn/drivers/passport) that slipped through.
   5. Convert values (dates, decimals, ids) into plain JSON-friendly forms.
 If the database complains (e.g. "column does not exist"), the error is recorded on the
-attempt, and the retry decision sends it back to the AI to fix.
+attempt, and the retry decision sends it back to the AI to fix. In step 1 of a two-database
+plan, a result without the linking column (e.g. provider) also counts as a failed try.
 
 The query runs through the driver's raw cursor with no parameters, so characters like
 '%' in LIKE patterns or ':' in text are passed to the database exactly as written.
@@ -59,6 +60,12 @@ def execute(state: ChatState, deps: Deps) -> dict:
                 cursor.close()
     except Exception as exc:  # noqa: BLE001 — any database error goes back to the AI
         attempts[-1]["error"] = str(exc).strip().splitlines()[0][:300]
+        return {"attempts": attempts, "result": None}
+
+    link = state.get("link")
+    if link and state.get("step", 0) == 0 and link.from_column.lower() not in {c.lower() for c in columns}:
+        attempts[-1]["error"] = (f"Include the column {link.from_column} (from {link.from_table}) in the output, "
+                                 "unaliased — the next step needs it to look up matching rows.")
         return {"attempts": attempts, "result": None}
 
     keep = [i for i, c in enumerate(columns) if c.lower() not in pii_names]

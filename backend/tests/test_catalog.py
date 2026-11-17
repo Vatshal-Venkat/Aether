@@ -55,3 +55,8 @@ def test_category_values_shown_to_ai():
 def test_allowed_tables(catalog):
     assert catalog.allowed_tables("clinical") == {"patients", "conditions"}
     assert [t.name for t in catalog.for_db("clinical")] == ["conditions", "patients"]
+
+
+def test_render_hides_columns(catalog):
+    out = catalog.render(["patients"], hidden={"patients.first"})
+    assert "first" not in out and "birthdate" in out

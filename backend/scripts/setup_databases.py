@@ -9,8 +9,10 @@ Plain English: this script builds the two "rooms" of our library from scratch.
   5. Creates the read-only account "chatbot_ro" the chatbot uses — it can look, never change.
   6. Switches on PostgreSQL row-level security (patient privacy filter).
 
-Run from backend/:   python -m scripts.setup_databases          (rebuild tables)
-                     python -m scripts.setup_databases --reset  (drop databases first)
+Run from backend/:   python -m scripts.setup_databases             (rebuild tables)
+                     python -m scripts.setup_databases --reset     (drop databases first)
+                     python -m scripts.setup_databases --rls-only  (only re-apply the privacy rules,
+                         e.g. after changing the PostgreSQL admin password or RLS_SECRET)
 """
 
 import argparse
@@ -92,26 +94,33 @@ def create_readonly_users(s: Settings, pg: Engine, my: Engine) -> None:
 
 
 RLS_TEMPLATE = Path(__file__).parent / "sql" / "postgres_rls.sql"
+IDENTITY_SQL = Path(__file__).parent / "sql" / "postgres_identity.sql"
 
 
-def apply_postgres_rls(pg: Engine) -> None:
-    """Switch on the patient privacy filter for every clinical table that holds patient data."""
-    template = "\n".join(
-        line for line in RLS_TEMPLATE.read_text().splitlines() if not line.lstrip().startswith("--")
-    )
+def _statements(sql: str) -> list[str]:
+    """Split a .sql file into statements: drop comment lines, split on ';' (our files keep ';' out of $$ bodies)."""
+    body = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
+    return [s.strip() for s in body.split(";") if s.strip()]
+
+
+def apply_postgres_rls(pg: Engine, key: str) -> None:
+    """Switch on the patient privacy filter (with signed identity) for every clinical patient table."""
     with pg.begin() as conn:
+        for statement in _statements(IDENTITY_SQL.read_text()):
+            conn.execute(text(statement), {"key": key} if ":key" in statement else {})
         for table, kind in TABLE_SPLIT.items():
             if kind != "clinical" or table not in PATIENT_COLUMN:
                 continue
-            for statement in template.format(table=table, patient_col=PATIENT_COLUMN[table]).split(";"):
-                if statement.strip():
-                    conn.execute(text(statement))
-    print("  row-level security on for all clinical patient tables")
+            for statement in _statements(RLS_TEMPLATE.read_text().format(table=table, patient_col=PATIENT_COLUMN[table])):
+                conn.execute(text(statement))
+    print("  row-level security (signed identity) on for all clinical patient tables")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--reset", action="store_true", help="drop both databases before rebuilding")
+    parser.add_argument("--rls-only", action="store_true",
+                        help="only re-apply PostgreSQL row-level security (no data reload)")
     args = parser.parse_args(argv)
 
     s = get_settings()
@@ -119,6 +128,13 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print("Missing in backend/.env: " + ", ".join(m.upper() for m in missing), file=sys.stderr)
         return 1
+
+    if args.rls_only:
+        pg = create_engine(s.clinical_url(admin=True))
+        apply_postgres_rls(pg, s.rls_key())
+        pg.dispose()
+        print("Done.")
+        return 0
 
     print("1/5 Synthea data")
     csv_dir = download_synthea(s.data_dir)
@@ -133,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     print("4/5 Read-only users")
     create_readonly_users(s, pg, my)
     print("5/5 Row-level security")
-    apply_postgres_rls(pg)
+    apply_postgres_rls(pg, s.rls_key())
     pg.dispose()
     my.dispose()
     print("Done.")

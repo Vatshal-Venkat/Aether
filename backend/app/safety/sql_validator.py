@@ -23,7 +23,7 @@ from typing import Literal
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot.errors import SqlglotError
 from sqlglot.optimizer.scope import traverse_scope
 
 Dialect = Literal["postgres", "mysql"]
@@ -113,7 +113,7 @@ def validate_sql(
     # 1. Parse into a syntax tree.
     try:
         statements = [s for s in sqlglot.parse(sql, read=dialect) if s is not None]
-    except ParseError as exc:
+    except SqlglotError as exc:  # ParseError and TokenError (e.g. an unterminated string)
         return _fail(f"The SQL could not be parsed ({str(exc).splitlines()[0]}). Write one valid {dialect} SELECT.")
     if len(statements) != 1:
         return _fail("Write exactly one SQL statement (no semicolon-separated statements).")
@@ -135,15 +135,17 @@ def validate_sql(
 
     # 4. Known tables only.
     tables = _real_tables(tree)
-    alias_to_table: dict[str, str] = {}
+    # Every table a qualifier COULD mean. Never overwrite: "FROM payers AS claims JOIN claims AS c2"
+    # makes "claims." mean payers — a one-to-one map let that hide payers' blocked columns (final review).
+    alias_to_table: dict[str, set[str]] = {}
     for t in tables:
         name = t.name.lower()
         schema = (t.db or "").lower()
         if t.catalog or schema not in _ALLOWED_SCHEMAS or name not in allowed_tables:
             return _fail(f"Table '{t.sql()}' is not available. Use only: {', '.join(sorted(allowed_tables))}.")
-        alias_to_table[t.alias_or_name.lower()] = name
-        alias_to_table[name] = name
-    referenced = set(alias_to_table.values())
+        alias_to_table.setdefault(t.alias_or_name.lower(), set()).add(name)
+        alias_to_table.setdefault(name, set()).add(name)
+    referenced = set().union(*alias_to_table.values()) if alias_to_table else set()
     blocked = {b.lower() for b in blocked_columns}
     tables_with_blocked = {b.split(".", 1)[0] for b in blocked}
 
@@ -151,14 +153,14 @@ def validate_sql(
     for col in tree.find_all(exp.Column):
         qualifier = col.table.lower() if col.table else ""
         if isinstance(col.this, exp.Star):  # t.*
-            if alias_to_table.get(qualifier) in tables_with_blocked:
+            if alias_to_table.get(qualifier, set()) & tables_with_blocked:
                 return _fail(f"Do not use {qualifier}.* on a table with private columns; list the columns you need.")
             continue
         name = col.name.lower()
-        if not qualifier and alias_to_table.get(name) in tables_with_blocked:
+        if not qualifier and alias_to_table.get(name, set()) & tables_with_blocked:
             # Bare table name/alias used as a value = the WHOLE row (e.g. row_to_json(p)).
             return _fail(f"Do not reference the whole row '{name}'; list the columns you need.")
-        owners = [alias_to_table[qualifier]] if qualifier in alias_to_table else referenced
+        owners = alias_to_table[qualifier] if qualifier in alias_to_table else referenced
         for owner in owners:
             if f"{owner}.{name}" in blocked:
                 return _fail(f"The column {owner}.{name} is private and must not be selected.")

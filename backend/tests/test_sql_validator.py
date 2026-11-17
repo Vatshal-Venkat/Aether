@@ -202,3 +202,30 @@ def test_tables_in_with_shadowing_cte():
 def test_tables_in():
     sql = "WITH x AS (SELECT patient FROM conditions) SELECT p.first FROM patients p JOIN x ON x.patient = p.id"
     assert tables_in(sql, "postgres") == ["conditions", "patients"]
+
+
+# --- Final review (Plan 2), Critical: a table aliased with another table's name ----------
+@pytest.mark.parametrize("sql", [
+    "SELECT encounters.ssn AS x FROM patients AS encounters JOIN encounters AS e ON e.patient = encounters.id",
+    "SELECT conditions.passport FROM patients conditions, conditions c",
+])
+def test_alias_named_like_another_table_cannot_hide_pii(sql):
+    assert_rejected(sql)
+
+
+def test_alias_collision_cannot_hide_population_columns():
+    blocked = {"payers.amount_covered", "payers.revenue"}
+    for sql in ["SELECT claims.name, claims.amount_covered, claims.revenue FROM payers AS claims CROSS JOIN claims AS c2",
+                "SELECT claims.amount_covered FROM payers AS claims JOIN claims AS c2 ON c2.primarypatientinsuranceid = claims.id"]:
+        result = validate_sql(sql, "mysql", {"payers", "claims"}, blocked, default_limit=1000)
+        assert not result.ok, sql
+
+
+def test_aliased_tables_still_work():
+    assert check("SELECT p.first, e.description FROM patients p JOIN encounters e ON e.patient = p.id").ok
+
+
+def test_tokenizer_error_is_a_rejection_not_a_crash():
+    # Final review: an unterminated string raised TokenError and crashed the whole answer.
+    result = validate_sql("SELECT 'abc FROM patients", "mysql", ALLOWED, BLOCKED, default_limit=1000)
+    assert not result.ok and result.error

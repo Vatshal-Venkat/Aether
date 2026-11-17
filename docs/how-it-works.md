@@ -163,6 +163,70 @@ small steps like a flowchart. See the next section for what each step does.
 
 FastAPI also gives a free interactive page at `http://localhost:8000/docs` to try them by hand.
 
+### Step 14 — Opening the second room (billing database) ✅ *(Plan 2)*
+Until now Aether only read the medical-records room (PostgreSQL). Now the router can also send a
+question to the **billing room (MySQL)**: doctors' names and specialities, hospitals, insurance
+companies, and insurance claims (what was charged, paid, and is still owed).
+
+The AI is told which kind of database it is writing for, because the two "dialects" differ a little
+— for example PostgreSQL understands `ILIKE` (case-insensitive search) and MySQL doesn't.
+
+### Step 15 — Questions that need BOTH rooms (the "plan" step) ✅
+*"Which doctor has seen the most patients? Give the doctor's name."* The visits are in the medical
+room; the doctors' names are in the billing room. Two separate databases **cannot be joined in one
+query** — they are different programs, possibly on different computers. So Aether works like a
+person with two filing cabinets:
+
+1. **Plan:** the AI splits the question into two smaller ones and picks how they connect, choosing from
+   a short approved list of links (e.g. *"a visit's `provider` is a doctor's `id`"*). Code checks the plan.
+2. **Step 1 (medical room):** *"count the patients per doctor id, keep the top one"* → `d1… : 19 patients`.
+3. **Step 2 (billing room):** *"give me the names of those doctors"*. The AI writes
+   `SELECT id, name FROM providers` — and **code** adds *"only the ids step 1 found"* before it runs.
+   The AI never copies the ids, so it can't mistype them or sneak anything in.
+4. **Merge:** code lines the two answers up on the shared id — like matching two lists by a customer
+   number — giving one table: *doctor id, 19 patients, name*. Then the answer is written as usual.
+
+If step 1 finds nothing, step 2 is skipped and you get "No records found".
+
+### Step 16 — Privacy in the billing room ✅
+MySQL has **no built-in privacy filter** like PostgreSQL's row-level security. So for patients, Aether
+**rewrites the query** before it runs. Every place it reads a patient table is swapped for a
+pre-filtered copy:
+
+```sql
+-- what the AI wrote (patient asks "how much do I still owe?")
+SELECT sum(outstandingp) FROM claims
+-- what actually runs
+SELECT sum(outstandingp) FROM (SELECT * FROM claims WHERE patientid = '<her id>') AS claims
+```
+
+The rewrite works on the parsed query (not the text), so it also catches the table inside joins,
+sub-questions, `WITH` blocks and `UNION`s. We fed it 10 attack queries against the real MySQL
+database — none saw another patient — and we checked the tests really bite by switching the filter
+off: then they fail.
+
+We use **two different techniques on purpose**, to learn both: the database enforces it (PostgreSQL),
+or our code enforces it (MySQL).
+
+**Hidden totals.** The insurer, hospital and doctor tables carry totals computed over *all* patients
+(an insurer's revenue, its number of customers, a doctor's number of visits). Those describe other
+people, so in patient mode they are removed from the table of contents and blocked by the safety
+check. A patient can still see their insurer's name and phone number.
+
+### Step 17 — A signature on the "who is asking" note ✅
+In PostgreSQL, the privacy filter trusts two notes pinned to each query: *role* and *patient id*.
+The safety inspector already stops any query from rewriting those notes — but what if one day it
+misses a trick? We tested it: a query that rewrites its own note part-way through **did** see all 111
+patients. So we added a second lock:
+
+- Aether now pins a third note: a **signature** — a fingerprint (SHA-256) of a secret key + role + patient id.
+- The key is stored in a table the chatbot's account **cannot read**.
+- The database recomputes the fingerprint for every row. A changed note no longer matches → nothing is shown.
+
+Same attack after the change: **0 extra rows**. Cost: about 5 millionths of a second per row checked.
+The key is derived from the database admin password, so there was nothing new to set up
+(if that password changes, re-run `python -m scripts.setup_databases --rls-only`).
+
 ---
 
 ## 5. What happens when you ask a question
@@ -172,14 +236,25 @@ FastAPI also gives a free interactive page at `http://localhost:8000/docs` to tr
      │
  ① ROUTE ──── not about our data? ──► "I can only answer questions about health records…"
      │   └─── patient asking about others? ──► "I can only answer about your own records."
+     │   (decides: medical room, billing room, or both)
      ▼
- ② PICK TABLES ── shows the AI only the few relevant tables + dictionary entries
+ PLAN ── one room: one step.  Both rooms: two steps joined by a known link (doctor id, patient id…)
      ▼
- ③ WRITE SQL ── the AI writes a database query
+ ┌─► ② PICK TABLES ── shows the AI only the few relevant tables of THIS step's room + dictionary entries
+ │      ▼
+ │   ③ WRITE SQL ── the AI writes a database query
+ │      ▼
+ │   ④ SAFETY CHECK ── rejected? ──┐
+ │      ▼                          │
+ │   ROW FILTER ── code adds "only │  ⑥ RETRY: the AI sees its own mistake and the exact
+ │      │  these rows" (patient in │     error message, and fixes it (max 3 tries per step)
+ │      │  MySQL; step 2's ids)    │
+ │      ▼                          │
+ │   ⑤ RUN (privacy filter on) ─ error? ─┘
+ │      ▼
+ └── another step? (step 1 found nothing → skip it)
      ▼
- ④ SAFETY CHECK ── rejected? ──┐
-     ▼                         │  ⑥ RETRY: the AI sees its own mistake and the exact
- ⑤ RUN (privacy filter on) ─ error? ─┘     error message, and fixes it (max 3 tries)
+ MERGE ── line the two steps' results up on the shared id
      ▼
  ⑦ WRITE ANSWER ── using ONLY the rows that came back (none? → "No records found")
      ▼
@@ -264,6 +339,48 @@ the true value computed straight from the database.
 - A doctor asking to delete data got the *patient* refusal message. Fixed.
 - "List all visits" took 63 seconds because the AI wrote out 50 rows. Now it summarises (13 s).
 
+### Report card after Plan 2 (second database + cross-database questions)
+
+Same method: every answer compared with the true value from the database. The 25 earlier questions plus new ones.
+
+| Question | Who | Result |
+|---|---|---|
+| Which insurance company has the most customers? | doctor | Medicaid (52) ✅ |
+| How many hospitals or clinics are in Boston? | doctor | 14 ✅ |
+| Which doctor has seen the most patients? Give the name. | doctor | Manuela585 Rendón540 ✅ — two steps, two databases |
+| Total outstanding patient balance for patients with diabetes? | doctor | 211.38 ✅ (after a dictionary fix, below) |
+| How much do I still owe on my claims? | patient | 0.0 ✅ — the query was rewritten to her claims only |
+| What is the name of the doctor I saw at my last visit? | patient | correct ✅ — cross-database, in patient mode |
+| What is the total revenue of my insurance company? | patient | politely refused ✅ (a company-wide total) |
+| All 11 medical-record questions and 5 privacy attacks from Plan 1 | both | still correct ✅ |
+| Follow-ups, unclear questions, drug information | — | not yet (Plans 3–4) |
+
+Typical times: one database 3–7 s; two databases 10–25 s (two queries, sometimes a self-correction).
+
+**What the test taught us (and what we fixed):**
+- **The dictionary was wrong about the data.** In the claims data, *payment* lines leave the `amount`
+  column empty and put the money in a `payments` column. Our dictionary said "sum `amount`", so the AI got
+  nothing. Fixed in the dictionary, no code change: this is exactly what a semantic layer is for.
+- **"Outstanding balance" wasn't in the dictionary**, so the AI summed a per-line running balance and said
+  779,415 instead of 211.38. Added the term ("patient owes → `claims.outstandingp`") and a warning on that column.
+- **Step 2 re-did step 1's job.** Asked for diabetic patients' balances, step 2 tried to filter "diabetes"
+  again in billing using an invented code, and found nothing. Step 2 is now told: *"step 1 already picked
+  the right rows — don't repeat its conditions."*
+- **Two sources, two answers.** "How much did insurance pay for her visits?" can be answered from the visits
+  (160,191) or from the claims (144,482.55). When both steps return one total, both are now kept side by side
+  instead of one silently replacing the other.
+- **A doctor named "Two"** was flagged by the number checker as the number 2. Number words that are part of
+  the data are now allowed.
+- **A second pair of eyes found a nickname trick.** An independent reviewer showed that if a query gives one
+  table *another table's name* as its nickname (`FROM payers AS claims JOIN claims ...`), the safety
+  inspector mixed the two up — and let through an insurer's company-wide revenue in patient mode, and SSNs in
+  doctor mode. Now a nickname is checked against **every** table it could mean. The same review found that
+  the billing privacy rewrite dropped joins written in brackets, and that a total could be partial without
+  saying so. All fixed, each with a test that failed first.
+- **Free-tier limits are real:** after a day of testing, Groq's free daily allowance (200,000 tokens) ran
+  out, and so did Gemini's. Aether answered "the AI service is rate-limited, try again" — the correct
+  behaviour — but it is a reminder that a free AI service limits how much you can test in a day.
+
 ## 6. Doctor view vs Patient view
 
 There is no login (this is a practice project). Instead, each question says who is asking:
@@ -272,7 +389,8 @@ There is no login (this is a practice project). Instead, each question says who 
 |---|---|---|
 | Can see | every patient's records | only their **own** records |
 | Questions about other patients or totals across patients | ✅ allowed | ❌ politely refused |
-| How it's enforced | — | ① the router refuses; ② the **database itself** hides other rows (row-level security) |
+| Company-wide totals (an insurer's revenue, a doctor's total visits) | ✅ | ❌ hidden — they describe other patients |
+| How it's enforced | — | ① the router refuses; ② medical room: the **database itself** hides other rows (row-level security, with a signed "who is asking" note); billing room: **our code rewrites the query** to only this patient's rows; ③ the safety check blocks the hidden totals |
 
 Private ID numbers (social security, driver's licence, passport) are hidden from **everyone** —
 the AI never even learns those columns exist.
@@ -304,3 +422,9 @@ use a paid service with that agreement, or run the AI on its own servers.
 - **LangGraph** — a free tool for running a series of AI steps as a flowchart, with loops (like our retry).
 - **Pipeline** — the chain of steps a question goes through.
 - **PII** — "personally identifiable information": details that identify a real person (SSN, passport…).
+- **Dialect** — each database brand speaks a slightly different version of SQL (PostgreSQL vs MySQL).
+- **Cross-database question** — one that needs data from both rooms; answered in two steps, then merged.
+- **Merge / join** — lining up two tables on a shared value (e.g. doctor id) so each row gets the matching details.
+- **Derived table** — a mini-table made by a query inside a query; our MySQL privacy filter swaps a real table for a filtered one.
+- **Query rewrite** — code changing a query after the AI wrote it (here: adding "only these rows").
+- **Signature / hash (SHA-256)** — a fingerprint of some text; change one letter and the fingerprint changes completely.

@@ -42,7 +42,15 @@ def small_catalog() -> Catalog:
         "medications": _cols("start", "stop", "patient", "description", "totalcost"),
         "allergies": _cols("start", "patient", "description", "severity1"),
     }
-    return Catalog({t: TableInfo(t, "clinical", cols, g.tables[t]) for t, cols in spec.items()})
+    billing = {
+        "providers": _cols("id", "name", "speciality", "organization", "encounters", "procedures"),
+        "organizations": _cols("id", "name", "city", "revenue", "utilization"),
+        "payers": _cols("id", "name", "phone", "amount_covered", "revenue", "unique_customers"),
+        "claims": _cols("id", "patientid", "providerid", "outstandingp", "servicedate"),
+    }
+    tables = {t: TableInfo(t, "clinical", cols, g.tables[t]) for t, cols in spec.items()}
+    tables |= {t: TableInfo(t, "billing", cols, g.tables[t]) for t, cols in billing.items()}
+    return Catalog(tables)
 
 
 def make_deps(llm, engines=None, **settings_overrides) -> Deps:

@@ -4,12 +4,18 @@ Plain English: the AI gets the question, the relevant tables, the glossary hints
 strict rules (read-only, no private columns...). If a previous attempt failed, it also
 sees its own failed query and the exact error, so it can correct itself — that is the
 "self-correction" loop. We then cut the SQL out of the AI's reply.
+
+In a two-step plan the AI writes one query per step, and is told how the steps connect:
+step 1 must output the linking column (e.g. encounters.provider); in step 2, code will keep
+only the rows matching step 1's values, so the AI must not filter on them itself.
 """
 
 import re
 
+from app.db.engines import DB_LABEL
 from app.graph.deps import Deps
 from app.graph.state import ChatState
+from app.graph.steps import current_step, is_multi_step, step_attempts
 from app.graph.timing import timed
 from app.llm.client import ask_text
 from app.llm.prompts import sql_system, sql_user
@@ -27,14 +33,37 @@ def extract_sql(text: str) -> str:
     return sql.strip().rstrip(";").strip()
 
 
+def link_notes(state: ChatState) -> list[str]:
+    """What the AI must know about how this step connects to the other one."""
+    link = state.get("link")
+    if not link:
+        return []
+    if state.get("step", 0) == 0:
+        other = DB_LABEL[state["plan"][1].db]
+        return [f"Include the column {link.from_table}.{link.from_column} in the output, unaliased: "
+                f"the next step uses it to look up {link.to_table} in {other}."]
+    previous = state["step_results"][0].result
+    n = len({str(r[i]) for r in previous.rows for i, c in enumerate(previous.columns)
+             if c.lower() == link.from_column.lower() and r[i] is not None})
+    return [f"Code will automatically keep only {link.to_table} rows whose {link.to_column} is one of the "
+            f"{n} values found in step 1. Do not filter on {link.to_column} yourself. Step 1 already applied "
+            "the question's conditions (which patients, doctors, diagnoses...): do not repeat them here — every "
+            f"{link.to_table} row you will see already belongs to the question. Include "
+            f"{link.to_table}.{link.to_column} unaliased if you return one row per item; for an overall "
+            "total you may aggregate."]
+
+
 @timed("generate_sql")
 def generate_sql(state: ChatState, deps: Deps) -> dict:
-    db = state.get("db") or (state["route"].databases[0] if state.get("route") and state["route"].databases else "clinical")
+    step = current_step(state)
+    db = step.db
+    question = (f"Overall question: {state['question']}\nThis step: {step.goal}"
+                if is_multi_step(state) else state["question"])
     attempts = list(state.get("attempts") or [])
     reply = ask_text(
         deps.llm,
         sql_system(DIALECT_NAMES[db], state["role"]),
-        sql_user(state["question"], state["schema_text"], attempts),
+        sql_user(question, state["schema_text"], step_attempts(state), link_notes(state)),
     )
-    attempts.append({"sql": extract_sql(reply), "error": None})
+    attempts.append({"step": state.get("step", 0), "db": db, "sql": extract_sql(reply), "executed": None, "error": None})
     return {"attempts": attempts, "db": db}

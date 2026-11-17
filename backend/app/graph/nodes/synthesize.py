@@ -6,6 +6,7 @@ numbers, naming its sources. If the query found nothing, we don't ask the AI at 
 we simply say "No records found", so there is nothing to invent.
 """
 
+from app.db.engines import DB_LABEL
 from app.graph.deps import Deps
 from app.graph.state import ChatState
 from app.graph.timing import timed
@@ -30,6 +31,14 @@ def _results_table(state: ChatState, limit: int) -> str:
     return "\n".join(lines)
 
 
+def _sql_that_ran(state: ChatState) -> str:
+    """Every step's query, labelled with its database (two steps for a two-database question)."""
+    steps = state.get("step_results") or []
+    if not steps:
+        return str(state.get("final_sql"))
+    return "\n".join(f"-- step {i + 1} on {DB_LABEL[s.db]}:\n{s.sql}" for i, s in enumerate(steps))
+
+
 LONG_LIST = 15   # more rows than this: summarise instead of listing
 LONG_LIST_SAMPLE = 10
 
@@ -41,7 +50,7 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
     shown = min(len(result.rows), limit)
     user = (
         f"Question: {state['question']}\n\n"
-        f"SQL that ran:\n{state.get('final_sql')}\n\n"
+        f"SQL that ran:\n{_sql_that_ran(state)}\n\n"
         f"Results ({result.total_rows} rows{', TRUNCATED' if result.truncated else ''}; showing {shown}):\n"
         f"{_results_table(state, limit)}\n\n"
         f"Sources: {', '.join(state.get('sources') or [])}"

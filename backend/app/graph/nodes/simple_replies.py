@@ -19,7 +19,8 @@ def out_of_scope(state: ChatState, deps: Deps) -> dict:
     return {
         "kind": "out_of_scope",
         "answer": "I can only answer questions about the health records in this system — "
-        "patients, visits, diagnoses, lab results, medications, procedures, vaccines and allergies.",
+        "patients, visits, diagnoses, lab results, medications, procedures, vaccines, allergies, "
+        "doctors, hospitals, insurers and insurance claims.",
     }
 
 

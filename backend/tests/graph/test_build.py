@@ -74,13 +74,6 @@ def test_out_of_scope_path(engine):
     assert result.kind == "out_of_scope"
 
 
-def test_billing_route_falls_back_to_clinical_for_now(engine):
-    llm = ScriptedLLM('{"kind": "sql", "databases": ["billing"], "reason": "claims"}',
-                      "SELECT count(*) AS n FROM patients", "There are 111 patients.")
-    result = _run(llm, engine)
-    assert result.kind == "answer" and result.sql[0].db == "clinical"
-
-
 def test_llm_failure_returns_error_kind(engine):
     import httpx
 
@@ -99,3 +92,92 @@ def test_unexpected_bug_gets_generic_message(engine):
     result = _run(ScriptedLLM(RuntimeError("some bug")), engine)
     assert result.kind == "error"
     assert "rate-limited" not in result.answer and "server log" in result.answer
+
+
+# --- Plan 2: billing database and two-database questions --------------------------------
+@pytest.fixture
+def two_dbs():
+    clinical = create_engine("sqlite://")
+    with clinical.begin() as conn:
+        conn.execute(text("CREATE TABLE encounters (id TEXT, patient TEXT, provider TEXT)"))
+        conn.execute(text("INSERT INTO encounters VALUES ('e1','p1','d1'), ('e2','p2','d1'), ('e3','p1','d2')"))
+    billing = create_engine("sqlite://")
+    with billing.begin() as conn:
+        conn.execute(text("CREATE TABLE providers (id TEXT, name TEXT)"))
+        conn.execute(text("INSERT INTO providers VALUES ('d1','Dr One'), ('d2','Dr Two'), ('d3','Dr Three')"))
+        conn.execute(text("CREATE TABLE claims (id TEXT, patientid TEXT, outstandingp REAL)"))
+        conn.execute(text("INSERT INTO claims VALUES ('c1','p1',10), ('c2','p1',5), ('c3','p2',99)"))
+    return {"clinical": clinical, "billing": billing}
+
+
+ROUTE_BOTH = '{"kind": "sql", "databases": ["clinical", "billing"], "reason": "visits + doctor names"}'
+ROUTE_BILLING = '{"kind": "sql", "databases": ["billing"], "reason": "billing"}'
+DOCTOR_PLAN = ('{"steps": [{"db": "clinical", "goal": "distinct patients per provider id, top 1"}, '
+               '{"db": "billing", "goal": "name of that provider"}], "link": "encounters.provider = providers.id"}')
+STEP1 = "SELECT provider, count(DISTINCT patient) AS n FROM encounters GROUP BY provider ORDER BY n DESC LIMIT 1"
+
+
+def _ask(llm, dbs, question, role="clinician", patient_id=None):
+    return run_chat(make_deps(llm, engines=dbs), question, role, patient_id, "s")
+
+
+def test_billing_only_question(two_dbs):
+    llm = ScriptedLLM(ROUTE_BILLING, "SELECT name FROM providers WHERE id = 'd2'",
+                      "The doctor is Dr Two. Source: billing_db.providers")
+    result = _ask(llm, two_dbs, "What is the name of doctor d2?")
+    assert result.kind == "answer" and "Dr Two" in result.answer
+    assert [r.db for r in result.sql] == ["billing"]
+    assert result.sources == ["billing_db.providers"]
+
+
+def test_cross_db_doctor_name(two_dbs):
+    llm = ScriptedLLM(ROUTE_BOTH, DOCTOR_PLAN, STEP1, "SELECT id, name FROM providers",
+                      "Dr One has seen the most patients (2). Sources: clinical_db.encounters, billing_db.providers")
+    result = _ask(llm, two_dbs, "Which doctor has seen the most patients? Give the doctor's name.")
+    assert result.kind == "answer", result.answer
+    assert "Dr One" in result.answer and result.unverified_numbers == []
+    assert [r.db for r in result.sql] == ["clinical", "billing"]
+    assert "'d1'" in result.sql[1].query and "'d2'" not in result.sql[1].query  # ids carried by code
+    assert result.table.columns == ["provider", "n", "name"]
+    assert result.table.rows == [["d1", 2, "Dr One"]]
+    assert result.sources == ["clinical_db.encounters", "billing_db.providers"]
+    step2_prompt = llm.prompt_text(3)
+    assert "keep only providers rows" in step2_prompt
+    synth_prompt = llm.prompt_text(4)
+    assert "step 1 on clinical_db" in synth_prompt and "step 2 on billing_db" in synth_prompt
+    assert {"plan", "row_filter", "merge"} <= set(result.timings)
+
+
+def test_cross_db_empty_first_step(two_dbs):
+    empty = "SELECT provider, count(*) AS n FROM encounters WHERE provider = 'zzz' GROUP BY provider"
+    llm = ScriptedLLM(ROUTE_BOTH, DOCTOR_PLAN, empty)  # no step-2 SQL, no answer-writing call scripted
+    result = _ask(llm, two_dbs, "Which doctor has seen the most patients? Give the doctor's name.")
+    assert result.kind == "answer" and "No records found" in result.answer
+    assert len(result.sql) == 1
+
+
+def test_cross_db_step1_retry_then_success(two_dbs):
+    llm = ScriptedLLM(ROUTE_BOTH, DOCTOR_PLAN, "SELECT count(*) AS n FROM encounters", STEP1,
+                      "SELECT id, name FROM providers", "Dr One (2 patients).")
+    result = _ask(llm, two_dbs, "Which doctor has seen the most patients? Give the doctor's name.")
+    assert result.kind == "answer"
+    assert "Include the column provider" in result.sql[0].error
+    assert [r.db for r in result.sql] == ["clinical", "clinical", "billing"]
+
+
+def test_patient_billing_filtered(two_dbs):
+    llm = ScriptedLLM(ROUTE_BILLING, "SELECT sum(outstandingp) AS owed FROM claims", "You still owe 15.0.")
+    result = _ask(llm, two_dbs, "How much do I still owe?", role="patient", patient_id="p1")
+    assert result.table.rows == [[15.0]]
+    assert "patientid = 'p1'" in result.sql[0].query  # the rewritten query is what is shown
+
+
+def test_invalid_plan_gives_error_kind(two_dbs):
+    bad = '{"steps": [{"db": "clinical", "goal": "a"}, {"db": "billing", "goal": "b"}], "link": "nonsense"}'
+    result = _ask(ScriptedLLM(ROUTE_BOTH, bad), two_dbs, "Which doctor saw most patients?")
+    assert result.kind == "error"
+
+
+def test_out_of_scope_mentions_billing_topics(engine):
+    result = _run(ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "weather"}'), engine)
+    assert result.kind == "out_of_scope" and "insurers" in result.answer and "doctors" in result.answer

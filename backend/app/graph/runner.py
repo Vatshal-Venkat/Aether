@@ -71,11 +71,12 @@ def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, sessi
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         log.exception("chat pipeline failed")
         return ChatResult(kind="error", answer=friendly_error(exc))
-    db = final.get("db", "clinical")
     return ChatResult(
         answer=final["answer"],
         kind=final["kind"],
-        sql=[SqlRecord(db=db, query=a["sql"], error=a["error"]) for a in final.get("attempts") or []],
+        # One record per try, on its own database; shows what really ran (with any row filter added).
+        sql=[SqlRecord(db=a.get("db") or final.get("db", "clinical"), query=a.get("executed") or a["sql"],
+                       error=a["error"]) for a in final.get("attempts") or []],
         sources=final.get("sources") or [],
         table=final.get("result"),
         unverified_numbers=final.get("unverified_numbers") or [],

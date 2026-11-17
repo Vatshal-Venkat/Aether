@@ -41,3 +41,13 @@ def test_password_is_url_encoded():
 def test_env_override(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     assert make().llm_provider == "gemini"
+
+
+def test_rls_key_derived_when_unset():
+    import hashlib
+    s = Settings(_env_file=None, pg_admin_password="pg")
+    assert s.rls_key() == hashlib.sha256(b"aether-rls|pg").hexdigest()
+
+
+def test_rls_key_explicit():
+    assert Settings(_env_file=None, pg_admin_password="pg", rls_secret="k").rls_key() == "k"

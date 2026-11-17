@@ -21,8 +21,11 @@ class RouteDecision(BaseModel):
     reason: str = ""
 
 
-class SqlAttempt(TypedDict):
-    sql: str
+class SqlAttempt(TypedDict, total=False):
+    step: int              # which plan step this try belongs to (0 or 1)
+    db: DbName
+    sql: str               # what the AI wrote
+    executed: str | None   # what actually ran, if code added a row filter
     error: str | None
 
 
@@ -33,9 +36,40 @@ class QueryResult(BaseModel):
     truncated: bool
 
 
+class PlanStep(BaseModel):
+    """One sub-question, answered from one database."""
+    db: DbName
+    goal: str
+
+
+class QueryPlan(BaseModel):
+    """What the AI proposes for a two-database question (checked by plan.normalize_plan)."""
+    steps: list[PlanStep]
+    link: str | None = None  # one of glossary.links, e.g. "encounters.provider = providers.id"
+
+
+class Link(BaseModel):
+    """How step 1's rows connect to step 2's: from = step 1's side, to = step 2's side."""
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+
+
+class StepResult(BaseModel):
+    db: DbName
+    sql: str
+    result: QueryResult
+    sources: list[str]
+
+
 def merge_dicts(a: dict, b: dict) -> dict:
-    """Each step adds its own timing without erasing the others'."""
-    return {**(a or {}), **(b or {})}
+    """Each step adds its own timing without erasing the others'. A step that runs more than
+    once (a retry, or once per plan step) reports its total time."""
+    merged = dict(a or {})
+    for key, value in (b or {}).items():
+        merged[key] = merged.get(key, 0.0) + value
+    return merged
 
 
 class ChatState(TypedDict, total=False):
@@ -44,6 +78,10 @@ class ChatState(TypedDict, total=False):
     patient_id: str | None
     session_id: str
     route: RouteDecision
+    plan: list[PlanStep]
+    link: Link | None
+    step: int                      # index of the plan step being worked on
+    step_results: list[StepResult]
     schema_text: str
     attempts: list[SqlAttempt]
     final_sql: str | None
