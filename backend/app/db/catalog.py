@@ -9,10 +9,15 @@ catalog — not the whole database — which keeps prompts short and answers acc
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, inspect, text
 
+from app.data.synthea import is_id_column
 from app.db.engines import DbName
+from app.db.rls import set_query_context
 from app.semantic.glossary import Glossary
+
+
+MAX_CATEGORY_VALUES = 12
 
 
 @dataclass
@@ -20,6 +25,7 @@ class ColumnInfo:
     name: str
     type: str
     description: str | None = None
+    values: list[str] | None = None  # the few values a category column holds, e.g. ['F', 'M']
 
 
 @dataclass
@@ -49,12 +55,28 @@ class Catalog:
                 continue
             lines = [f"TABLE {t.name}" + (f"  -- {t.description}" if t.description else "")]
             for c in t.columns:
-                lines.append(f"  {c.name} {c.type}" + (f"  -- {c.description}" if c.description else ""))
+                notes = [n for n in (c.description, c.values and "values: " + ", ".join(f"'{v}'" for v in c.values)) if n]
+                lines.append(f"  {c.name} {c.type}" + (f"  -- {'; '.join(notes)}" if notes else ""))
             blocks.append("\n".join(lines))
         return "\n\n".join(blocks)
 
 
+def _category_values(engine: Engine, table: str, column: str) -> list[str] | None:
+    """The distinct values of a text column, if there are only a few (e.g. gender 'F'/'M')."""
+    with engine.connect() as conn, conn.begin():
+        if engine.dialect.name == "postgresql":
+            set_query_context(conn, "clinician", None)  # row-level security would otherwise hide every row
+        rows = conn.execute(
+            text(f'SELECT DISTINCT "{column}" FROM "{table}" WHERE "{column}" IS NOT NULL LIMIT {MAX_CATEGORY_VALUES + 1}')
+            if engine.dialect.name != "mysql"
+            else text(f"SELECT DISTINCT `{column}` FROM `{table}` WHERE `{column}` IS NOT NULL LIMIT {MAX_CATEGORY_VALUES + 1}")
+        ).scalars().all()
+    return sorted(str(v) for v in rows) if 0 < len(rows) <= MAX_CATEGORY_VALUES else None
+
+
 def build_catalog(engines: dict[DbName, Engine], glossary: Glossary) -> Catalog:
+    """Introspect each database. Short text "category" columns also get their list of values,
+    so the AI writes gender = 'F' instead of guessing gender = 'female'. Id and PII columns never do."""
     pii = set(glossary.pii_columns)
     catalog = Catalog()
     for db, engine in engines.items():
@@ -62,10 +84,13 @@ def build_catalog(engines: dict[DbName, Engine], glossary: Glossary) -> Catalog:
         for table in inspector.get_table_names():
             if table not in glossary.tables:
                 continue
-            columns = [
-                ColumnInfo(name=c["name"], type=str(c["type"]).lower(), description=glossary.columns.get(f"{table}.{c['name']}"))
-                for c in inspector.get_columns(table)
-                if f"{table}.{c['name']}" not in pii
-            ]
+            columns = []
+            for c in inspector.get_columns(table):
+                if f"{table}.{c['name']}" in pii:
+                    continue
+                col_type = str(c["type"]).lower()
+                is_text = any(k in col_type for k in ("char", "text", "string"))
+                values = _category_values(engine, table, c["name"]) if is_text and not is_id_column(c["name"]) else None
+                columns.append(ColumnInfo(c["name"], col_type, glossary.columns.get(f"{table}.{c['name']}"), values))
             catalog.tables[table] = TableInfo(table, db, columns, glossary.tables[table])
     return catalog

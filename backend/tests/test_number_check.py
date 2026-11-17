@@ -52,5 +52,12 @@ def test_invented_number_flagged():
     assert check("Abe604 has 7 visits.", [["Abe604", 3]]) == ["7"]
 
 
+def test_number_words_are_checked_too():
+    # Live test: the AI wrote "Four patients..." — words must be checked like digits.
+    assert check("Four patients have a peanut allergy.", [[4]]) == []
+    assert check("Five patients have a peanut allergy.", [[4]]) == ["Five"]
+    assert check("Zero patients have Ebola.", [[0]]) == []
+
+
 def test_invented_money_flagged():
     assert check("Insurance paid $9,999.00 in total.", [[120.0]]) == ["$9,999.00"]

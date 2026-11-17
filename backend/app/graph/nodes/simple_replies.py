@@ -7,10 +7,11 @@ from app.graph.timing import timed
 
 @timed("refuse")
 def refuse(state: ChatState, deps: Deps) -> dict:
-    return {
-        "kind": "refusal",
-        "answer": "In patient mode I can only answer questions about your own records.",
-    }
+    if state.get("role") == "patient":
+        answer = "In patient mode I can only answer questions about your own records."
+    else:
+        answer = "I can't do that. I can only read and summarise the health records — never change or delete them."
+    return {"kind": "refusal", "answer": answer}
 
 
 @timed("out_of_scope")

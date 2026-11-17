@@ -37,6 +37,22 @@ def test_synthesize_uses_rows_and_sources_in_prompt():
     assert "internal id" in prompt.lower()  # tells the AI not to show UUIDs unless asked
 
 
+def test_many_rows_asks_for_summary_not_full_list():
+    # Live test: "List all encounters" took 63 s because the AI wrote out 50 rows.
+    rows = [[f"row{i}"] for i in range(40)]
+    llm = ScriptedLLM("There are 40 rows; the full table is attached.")
+    synthesize(_state(rows, columns=("x",)), make_deps(llm))
+    prompt = llm.prompt_text().lower()
+    assert "do not list them all" in prompt
+    assert prompt.count("row") < 30  # only a sample of rows is sent, not all 40
+
+
+def test_prompt_asks_for_digits():
+    llm = ScriptedLLM("There are 111 patients.")
+    synthesize(_state([[111]]), make_deps(llm))
+    assert "digits" in llm.prompt_text().lower()
+
+
 def test_verify_passes_clean_answer_without_llm():
     state = {**_state([[111]]), "answer": "There are 111 patients."}
     out = verify_numbers(state, make_deps(ScriptedLLM()))

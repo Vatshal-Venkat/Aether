@@ -111,7 +111,7 @@ def load_table(csv_path: Path) -> pd.DataFrame:
     return df
 
 
-def _is_id_column(name: str) -> bool:
+def is_id_column(name: str) -> bool:
     return name in ID_COLUMNS or name.endswith("id")
 
 
@@ -123,7 +123,7 @@ def sql_dtypes(df: pd.DataFrame) -> dict[str, TypeEngine]:
     types: dict[str, TypeEngine] = {
         col: String(64)
         for col in df.columns
-        if _is_id_column(col) and not pd.api.types.is_numeric_dtype(df[col])
+        if is_id_column(col) and not pd.api.types.is_numeric_dtype(df[col])
     }
     for col in DATE_COLUMNS & set(df.columns):
         if df[col].dtype == object:  # plain calendar dates (see load_table)

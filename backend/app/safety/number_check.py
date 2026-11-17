@@ -47,10 +47,22 @@ def _matches(value: float, decimals: int, percent: bool, allowed: set[float]) ->
     return False
 
 
+# Numbers written as words are checked too ("Four patients..."). "one" is left out on purpose:
+# it is far more often prose ("no one", "one of them") than a count.
+NUMBER_WORDS = {
+    w: i for i, w in enumerate(
+        "zero _ two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+        "fifteen sixteen seventeen eighteen nineteen twenty".split()
+    ) if w != "_"
+}
+WORD = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", re.IGNORECASE)
+
+
 def find_unverified_numbers(answer: str, rows: list[list[Any]], question: str, extra_allowed: set[float]) -> list[str]:
     allowed = _allowed_numbers(rows, question, extra_allowed)
     text = LIST_MARKER.sub("", answer)
-    bad = []
+    bad = [m.group(0) for m in WORD.finditer(text)
+           if not _matches(float(NUMBER_WORDS[m.group(0).lower()]), 0, False, allowed)]
     for m in NUMBER.finditer(text):
         dollar, whole, frac, pct = m.groups()
         value = float(whole.replace(",", "") + (frac or ""))

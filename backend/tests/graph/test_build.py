@@ -60,6 +60,14 @@ def test_refusal_path(engine):
     assert result.sql == []
 
 
+def test_clinician_refusal_does_not_mention_patient_mode(engine):
+    # Live test: "Delete all patients" as a clinician got the patient-mode message.
+    llm = ScriptedLLM('{"kind": "refuse", "databases": [], "reason": "asks to delete data"}')
+    result = _run(llm, engine, role="clinician")
+    assert result.kind == "refusal"
+    assert "patient mode" not in result.answer and "read" in result.answer.lower()
+
+
 def test_out_of_scope_path(engine):
     llm = ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "weather"}')
     result = _run(llm, engine)

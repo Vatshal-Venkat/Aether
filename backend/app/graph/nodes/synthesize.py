@@ -16,6 +16,7 @@ Rules:
 - Use only numbers and facts that appear in the results. Never estimate, extrapolate or invent.
 - Be brief: one to four sentences, or a short markdown list/table when listing several items.
 - End with the sources in the form "Source: <database.table>, ...".
+- Write every number as digits (4, not "four").
 - If the results were truncated, say the list is partial.
 - Do not show internal ID columns (long codes like 007a32fb-33a3-...) unless the user asked for IDs;
   show names, dates and descriptions instead.
@@ -29,16 +30,27 @@ def _results_table(state: ChatState, limit: int) -> str:
     return "\n".join(lines)
 
 
+LONG_LIST = 15   # more rows than this: summarise instead of listing
+LONG_LIST_SAMPLE = 10
+
+
 def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) -> str:
     result = state["result"]
-    shown = min(len(result.rows), deps.settings.rows_to_llm)
+    long_list = result.total_rows > LONG_LIST
+    limit = LONG_LIST_SAMPLE if long_list else deps.settings.rows_to_llm
+    shown = min(len(result.rows), limit)
     user = (
         f"Question: {state['question']}\n\n"
         f"SQL that ran:\n{state.get('final_sql')}\n\n"
         f"Results ({result.total_rows} rows{', TRUNCATED' if result.truncated else ''}; showing {shown}):\n"
-        f"{_results_table(state, deps.settings.rows_to_llm)}\n\n"
+        f"{_results_table(state, limit)}\n\n"
         f"Sources: {', '.join(state.get('sources') or [])}"
     )
+    if long_list:
+        user += (
+            f"\n\nThere are {result.total_rows}{'+' if result.truncated else ''} rows: do not list them all. "
+            "Summarise in 1-3 sentences (you may mention a few examples) and say the full table is attached."
+        )
     if correction:
         user += f"\n\n{correction}"
     return ask_text(deps.llm, SYSTEM, user)
