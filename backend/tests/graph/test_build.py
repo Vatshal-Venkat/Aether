@@ -74,6 +74,20 @@ def test_billing_route_falls_back_to_clinical_for_now(engine):
 
 
 def test_llm_failure_returns_error_kind(engine):
-    result = _run(ScriptedLLM(RuntimeError("429 Too Many Requests")), engine)
+    import httpx
+
+    result = _run(ScriptedLLM(httpx.ConnectError("connection refused")), engine)
     assert result.kind == "error"
     assert "rate-limited" in result.answer
+
+
+def test_unusable_ai_reply_gets_its_own_message(engine):
+    # Review I3: not every failure is "the AI service is down".
+    result = _run(ScriptedLLM("not json", "still not json"), engine)
+    assert result.kind == "error" and "rephras" in result.answer
+
+
+def test_unexpected_bug_gets_generic_message(engine):
+    result = _run(ScriptedLLM(RuntimeError("some bug")), engine)
+    assert result.kind == "error"
+    assert "rate-limited" not in result.answer and "server log" in result.answer

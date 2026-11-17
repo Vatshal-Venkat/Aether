@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import get_deps
+from app.api.deps import database_errors_as_503, get_deps
 from app.db.patients import patient_exists
 from app.graph.deps import Deps
 from app.graph.runner import ChatResult, run_chat
@@ -40,7 +40,8 @@ def get_runner() -> Callable[..., ChatResult]:
 @router.post("/chat", response_model=ChatResult)
 async def chat(req: ChatRequest, deps: Deps = Depends(get_deps), runner=Depends(get_runner)) -> ChatResult:
     if req.role == "patient":
-        exists = await run_in_threadpool(patient_exists, deps.engines["clinical"], req.patient_id)
+        with database_errors_as_503():
+            exists = await run_in_threadpool(patient_exists, deps.engines["clinical"], req.patient_id)
         if not exists:
             raise HTTPException(status_code=422, detail="Unknown patient_id")
     # The pipeline is synchronous (DB drivers + AI calls); run it off the event loop.

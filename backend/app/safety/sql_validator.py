@@ -24,12 +24,35 @@ from typing import Literal
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
+from sqlglot.optimizer.scope import traverse_scope
 
 Dialect = Literal["postgres", "mysql"]
 
-BLOCKED_FUNCTIONS = {
-    "set_config", "current_setting", "pg_sleep", "sleep", "benchmark", "load_file",
-    "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "lo_export", "dblink", "copy",
+# ALLOW-list of functions (by sqlglot node name or SQL name, lower-case). Anything else is
+# rejected. A block-list is not enough: PostgreSQL has functions such as query_to_xml()
+# that run SQL hidden inside a text string, which no parser can inspect — found in review.
+ALLOWED_FUNCTIONS = {
+    # logic / structure that sqlglot models as functions
+    "and", "or", "not", "xor", "exists", "case", "if", "coalesce", "nullif", "greatest", "least", "ifnull",
+    # aggregates and statistics
+    "count", "sum", "avg", "min", "max", "arrayagg", "array_agg", "groupconcat", "group_concat", "string_agg",
+    "stddev", "stddevsamp", "stddevpop", "variance", "variancepop", "percentilecont", "percentile_cont",
+    "percentiledisc", "percentile_disc", "median", "logicalor", "logicaland", "bool_or", "bool_and",
+    # window functions
+    "rownumber", "row_number", "rank", "denserank", "dense_rank", "lag", "lead", "ntile",
+    "firstvalue", "first_value", "lastvalue", "last_value", "percentrank", "cumedist",
+    # types and numbers
+    "cast", "trycast", "round", "abs", "ceil", "floor", "pow", "power", "sqrt", "mod", "sign", "trunc", "truncate",
+    "ln", "log", "exp",
+    # text
+    "lower", "upper", "concat", "concatws", "concat_ws", "length", "substring", "trim", "replace", "left", "right",
+    "splitpart", "split_part", "strposition", "position", "initcap", "lpad", "rpad", "reverse",
+    # dates and times
+    "currentdate", "current_date", "currenttimestamp", "current_timestamp", "now", "curdate", "date", "datetrunc",
+    "date_trunc", "timestamptrunc", "extract", "date_part", "age", "make_date", "dateadd", "date_add", "datesub",
+    "date_sub", "datediff", "timestampdiff", "year", "month", "day", "dayofweek", "dayofmonth", "dayofyear",
+    "week", "quarter", "timetostr", "to_char", "strtodate", "to_date", "str_to_date", "date_format",
+    "tsordstodate", "tsordstotimestamp", "justifyinterval", "justifydays",
 }
 
 _WRITE_NODES = tuple(
@@ -62,8 +85,22 @@ def _function_names(fn: exp.Func) -> set[str]:
 
 
 def _real_tables(tree: exp.Expression) -> list[exp.Table]:
-    cte_names = {cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE)}
-    return [t for t in tree.find_all(exp.Table) if t.name.lower() not in cte_names]
+    """Every table reference that reads a real table (not a CTE), resolved scope by scope.
+
+    A CTE named after a real table (WITH patients AS (... FROM patients)) must not hide the
+    real table inside its own body — found in review. If scoping fails, treat every table
+    reference as real (the safe direction: unknown names get rejected).
+    """
+    try:
+        scopes = traverse_scope(tree)
+    except Exception:  # noqa: BLE001
+        return list(tree.find_all(exp.Table))
+    cte_refs: set[int] = set()
+    for scope in scopes:
+        for table in scope.tables:
+            if not table.db and not table.catalog and table.name in scope.cte_sources:
+                cte_refs.add(id(table))
+    return [t for t in tree.find_all(exp.Table) if id(t) not in cte_refs]
 
 
 def validate_sql(
@@ -88,11 +125,13 @@ def validate_sql(
     if tree.find(exp.Into) or tree.args.get("into"):
         return _fail("SELECT ... INTO is not allowed; just return the rows.")
 
-    # 3. Dangerous functions.
+    # 3. Only allow-listed functions.
     for fn in tree.find_all(exp.Func):
-        bad = _function_names(fn) & BLOCKED_FUNCTIONS
-        if bad:
-            return _fail(f"The function {sorted(bad)[0]}() is not allowed.")
+        names = _function_names(fn)
+        if not names & ALLOWED_FUNCTIONS:
+            shown = fn.name if isinstance(fn, exp.Anonymous) else fn.sql_name()
+            return _fail(f"The function {str(shown).lower()}() is not allowed; use standard aggregate, "
+                         "date, text or math functions.")
 
     # 4. Known tables only.
     tables = _real_tables(tree)

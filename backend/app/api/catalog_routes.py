@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 
-from app.api.deps import get_deps
+from app.api.deps import database_errors_as_503, get_deps
 from app.db.patients import list_patients
 from app.graph.deps import Deps
 
@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api")
 
 @router.get("/patients")
 async def patients(deps: Deps = Depends(get_deps)) -> list[dict]:
-    return await run_in_threadpool(list_patients, deps.engines["clinical"])
+    with database_errors_as_503():
+        return await run_in_threadpool(list_patients, deps.engines["clinical"])
 
 
 @router.get("/schema")

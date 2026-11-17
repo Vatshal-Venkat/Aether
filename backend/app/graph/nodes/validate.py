@@ -23,7 +23,8 @@ def validate(state: ChatState, deps: Deps) -> dict:
         DIALECTS[db],
         allowed_tables=deps.catalog.allowed_tables(db),
         blocked_columns=set(deps.glossary.pii_columns),
-        default_limit=deps.settings.rows_stored_cap,
+        # +1 so execute can tell "exactly the cap" from "more rows exist" (truncated flag).
+        default_limit=deps.settings.rows_stored_cap + 1,
     )
     if not result.ok:
         attempts[-1]["error"] = f"Rejected by safety check: {result.error}"

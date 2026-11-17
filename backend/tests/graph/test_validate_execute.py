@@ -55,7 +55,7 @@ def test_validate_success_sets_final_sql_with_limit():
     state = {"db": "clinical", "attempts": [_attempt("SELECT first FROM patients")], **CLINICIAN}
     out = validate(state, make_deps(ScriptedLLM()))
     assert out["attempts"][-1]["error"] is None
-    assert "LIMIT 1000" in out["final_sql"]
+    assert "LIMIT 1001" in out["final_sql"]  # cap + 1, so truncation can be detected
 
 
 def test_fail_node_message():
@@ -93,6 +93,15 @@ def test_execute_strips_pii_columns(sqlite_deps):
 def test_execute_truncates(sqlite_deps):
     out = _exec(sqlite_deps, "SELECT id FROM patients")
     assert len(out["result"].rows) == 5 and out["result"].truncated is True
+
+
+def test_truncation_detected_through_validate_and_execute(sqlite_deps):
+    # Review I1: the LIMIT added by validate must leave room to notice "there were more rows".
+    state = {"db": "clinical", "attempts": [_attempt("SELECT id FROM patients")], **CLINICIAN}
+    state.update(validate(state, sqlite_deps))
+    out = execute(state, sqlite_deps)
+    assert len(out["result"].rows) == 5
+    assert out["result"].truncated is True
 
 
 def test_execute_db_error_recorded(sqlite_deps):

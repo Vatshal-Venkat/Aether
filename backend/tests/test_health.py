@@ -1,5 +1,6 @@
 """/health: a quick "is everything plugged in?" check."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import health
@@ -23,6 +24,22 @@ def test_health_degraded(monkeypatch):
     assert resp.status_code == 200
     assert resp.json()["status"] == "degraded"
     assert resp.json()["billing"] == "error: refused"
+
+
+@pytest.mark.db
+def test_chatbot_connections_use_utc():
+    # Timestamps must read the same on any machine, whatever its local time zone.
+    from sqlalchemy import text
+
+    from app.db.engines import get_engine
+    from tests.conftest import requires_db
+
+    requires_db("clinical")
+    requires_db("billing")
+    with get_engine("clinical").connect() as conn:
+        assert conn.execute(text("SHOW TimeZone")).scalar() == "UTC"
+    with get_engine("billing").connect() as conn:
+        assert conn.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
 
 
 def test_cors_allows_localhost_vite(monkeypatch):

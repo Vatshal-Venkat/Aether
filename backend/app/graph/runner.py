@@ -16,7 +16,9 @@ from app.db.engines import DbName, get_engine
 from app.graph.build import build_graph
 from app.graph.deps import Deps
 from app.graph.state import AnswerKind, QueryResult
-from app.llm.client import get_chat_model
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.llm.client import LLMOutputError, _transient_errors, get_chat_model
 from app.semantic.glossary import load_glossary
 
 log = logging.getLogger(__name__)
@@ -50,17 +52,25 @@ def build_deps(settings: Settings) -> Deps:
     )
 
 
+def friendly_error(exc: Exception) -> str:
+    """Pick a message that points the user in the right direction."""
+    if isinstance(exc, LLMOutputError):
+        return "The AI gave a reply I couldn't use. Please try again, or try rephrasing your question."
+    if isinstance(exc, SQLAlchemyError):
+        return "The database is unavailable right now. Please try again shortly."
+    if isinstance(exc, _transient_errors()):
+        return "The AI service is unavailable or rate-limited right now. Please try again in a minute."
+    return "Something went wrong while answering. The details are in the server log."
+
+
 def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> ChatResult:
     state = {"question": question, "role": role, "patient_id": patient_id, "session_id": session_id,
              "attempts": [], "timings": {}}
     try:
         final = build_graph(deps).invoke(state)
-    except Exception:  # noqa: BLE001 — the user gets a friendly message; details go to the log
+    except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         log.exception("chat pipeline failed")
-        return ChatResult(
-            kind="error",
-            answer="The AI service is unavailable or rate-limited right now. Please try again in a minute.",
-        )
+        return ChatResult(kind="error", answer=friendly_error(exc))
     db = final.get("db", "clinical")
     return ChatResult(
         answer=final["answer"],

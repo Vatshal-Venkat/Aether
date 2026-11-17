@@ -13,7 +13,7 @@ from typing import Literal
 
 import httpx
 import pandas as pd
-from sqlalchemy.types import String, TypeEngine
+from sqlalchemy.types import Date, String, TypeEngine
 
 SYNTHEA_URL = (
     "https://synthetichealth.github.io/synthea-sample-data/downloads/latest/synthea_sample_data_csv_latest.zip"
@@ -101,7 +101,13 @@ def load_table(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path, low_memory=False)
     df.columns = [c.lower() for c in df.columns]
     for col in DATE_COLUMNS & set(df.columns):
-        df[col] = pd.to_datetime(df[col], utc=True, format="ISO8601", errors="coerce")
+        raw = df[col].dropna().astype(str)
+        parsed = pd.to_datetime(df[col], utc=True, format="ISO8601", errors="coerce")
+        if len(raw) and (raw.str.len() == 10).all():
+            # Calendar dates like "1985-03-21" (birthdate) stay plain dates — no time, no time zone.
+            df[col] = parsed.dt.date.astype(object).where(parsed.notna(), None)
+        else:
+            df[col] = parsed  # real moments in time, e.g. "2017-02-22T04:27:13Z"
     return df
 
 
@@ -114,8 +120,12 @@ def sql_dtypes(df: pd.DataFrame) -> dict[str, TypeEngine]:
 
     Numeric ids (e.g. departmentid) are left as numbers.
     """
-    return {
+    types: dict[str, TypeEngine] = {
         col: String(64)
         for col in df.columns
         if _is_id_column(col) and not pd.api.types.is_numeric_dtype(df[col])
     }
+    for col in DATE_COLUMNS & set(df.columns):
+        if df[col].dtype == object:  # plain calendar dates (see load_table)
+            types[col] = Date()
+    return types

@@ -34,8 +34,22 @@ def test_load_table_lowercases_and_parses_dates():
     df = load_table(FIXTURES / "encounters.csv")
     assert "start" in df.columns and "START" not in df.columns
     assert pd.api.types.is_datetime64_any_dtype(df["start"])
+
+
+def test_date_only_columns_become_plain_dates():
+    # birthdate is "1985-03-21" in the CSV: a calendar date, not a moment in time.
+    # Storing it as midnight-UTC shifted displayed dates by the server's time zone.
+    import datetime as dt
+
     patients = load_table(FIXTURES / "patients.csv")
-    assert pd.api.types.is_datetime64_any_dtype(patients["birthdate"])
+    first = patients["birthdate"].dropna().iloc[0]
+    assert type(first) is dt.date
+    assert sql_dtypes(patients)["birthdate"].__class__.__name__ == "Date"
+
+
+def test_timestamp_columns_stay_timestamps():
+    encounters = load_table(FIXTURES / "encounters.csv")  # "2017-02-22T04:27:13Z"
+    assert pd.api.types.is_datetime64_any_dtype(encounters["start"])
 
 
 def test_sql_dtypes_id_columns_are_varchar64():

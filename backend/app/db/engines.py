@@ -27,7 +27,8 @@ def get_engine(db: DbName) -> Engine:
             s.clinical_url(),
             pool_pre_ping=True,
             pool_size=5,
-            connect_args={"options": f"-c statement_timeout={timeout_ms}", "connect_timeout": 5},
+            # UTC so timestamps read the same whatever the computer's local time zone is.
+            connect_args={"options": f"-c statement_timeout={timeout_ms} -c TimeZone=UTC", "connect_timeout": 5},
         )
     engine = create_engine(s.billing_url(), pool_pre_ping=True, pool_size=5, connect_args={"connect_timeout": 5})
 
@@ -35,6 +36,7 @@ def get_engine(db: DbName) -> Engine:
     def _set_mysql_timeout(dbapi_conn, _record):  # MySQL's per-session query stopwatch
         with dbapi_conn.cursor() as cur:
             cur.execute(f"SET SESSION MAX_EXECUTION_TIME={timeout_ms}")
+            cur.execute("SET time_zone = '+00:00'")
 
     return engine
 

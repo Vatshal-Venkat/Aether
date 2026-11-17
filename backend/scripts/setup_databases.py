@@ -33,7 +33,8 @@ def _sql_literal(value: str) -> str:
 
 
 def _server_url(db_url: str, database: str | None) -> str:
-    return make_url(db_url).set(database=database).render_as_string(hide_password=False)
+    # Note: URL.set(database=None) means "unchanged" in SQLAlchemy; _replace really clears it.
+    return make_url(db_url)._replace(database=database).render_as_string(hide_password=False)
 
 
 def create_databases(s: Settings, reset: bool) -> None:

@@ -99,8 +99,9 @@ def test_rejects_whole_row_reference_to_pii_table():
     assert_rejected("SELECT p FROM patients p")
 
 
-def test_allows_whole_row_of_safe_table():
-    assert check("SELECT row_to_json(e) FROM encounters e").ok
+def test_row_to_json_not_on_allowlist_even_for_safe_tables():
+    # Stricter since review C1: whole-row JSON is never needed to answer a question.
+    assert_rejected("SELECT row_to_json(e) FROM encounters e")
 
 
 def test_allows_star_on_safe_table_and_count_star():
@@ -120,6 +121,82 @@ def test_keeps_existing_limit():
 
 def test_unparseable_sql_rejected():
     assert_rejected("SELEC first FROM", contains="")
+
+
+# --- Review finding C1: dynamic SQL inside strings (query_to_xml & friends) -----------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # the verified exploit: switch identity, then count every patient
+        "SELECT query_to_xml('select set_config(''app.role'',''clinician'',true)', true, false, '') AS a, "
+        "(xpath('count(/table/row)', query_to_xml('select id from patients', true, false, '')))[1]::text AS n",
+        "SELECT query_to_xml('select ssn from patients', true, false, '')",
+        "SELECT table_to_xml('patients', true, false, '')",
+        "SELECT cursor_to_xml('c', 1, true, false, '')",
+        "SELECT database_to_xml(true, false, '')",
+        "SELECT pg_terminate_backend(123)",
+        "SELECT pg_sleep_for('5 minutes')",
+        "SELECT pg_advisory_lock(1)",
+        "SELECT made_up_function(1)",
+    ],
+)
+def test_rejects_functions_not_on_allowlist(sql):
+    assert_rejected(sql)
+
+
+ANALYTIC_TABLES = {"t", "u"}
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT COUNT(*), COUNT(DISTINCT patient), SUM(x), AVG(x), MIN(x), MAX(x) FROM t",
+        "SELECT ROUND(AVG(CAST(value AS NUMERIC)), 2), value::numeric, CAST(start AS DATE), start::date FROM t",
+        "SELECT date_part('year', age(coalesce(deathdate, now()), birthdate)) FROM t",
+        "SELECT EXTRACT(YEAR FROM start), DATE_TRUNC('month', start), CURRENT_DATE, NOW() FROM t",
+        "SELECT start > CURRENT_DATE - INTERVAL '1 year', to_char(start, 'YYYY-MM') FROM t",
+        "SELECT LOWER(a), UPPER(a), CONCAT(a, ' ', b), a || b, LENGTH(a), SUBSTRING(a, 1, 3), TRIM(a), "
+        "REPLACE(a, 'x', 'y'), LEFT(a, 2), split_part(a, ' ', 1), position('x' in a) FROM t",
+        "SELECT CASE WHEN a > 1 THEN 'x' ELSE 'y' END, NULLIF(a, 0), GREATEST(a, b), LEAST(a, b), ABS(a), "
+        "CEIL(a), FLOOR(a), POWER(a, 2), SQRT(a) FROM t",
+        "SELECT ROW_NUMBER() OVER (PARTITION BY p ORDER BY d DESC), RANK() OVER (ORDER BY d), LAG(a) OVER (ORDER BY d) FROM t",
+        "SELECT string_agg(a, ', '), array_agg(a), STDDEV(a), PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY a) FROM t",
+        "SELECT a FROM t WHERE a ILIKE '%x%' AND b IN (1, 2) AND c BETWEEN 1 AND 2 AND NOT d IS NULL "
+        "AND EXISTS (SELECT 1 FROM u)",
+    ],
+)
+def test_allows_common_postgres_functions(sql):
+    result = validate_sql(sql, "postgres", ANALYTIC_TABLES, BLOCKED, default_limit=1000)
+    assert result.ok, result.error
+
+
+def test_allows_common_mysql_functions():
+    sql = ("SELECT YEAR(d), MONTH(d), DATEDIFF(a, b), TIMESTAMPDIFF(YEAR, a, b), IFNULL(a, 0), IF(a > 1, 'x', 'y'), "
+           "GROUP_CONCAT(a SEPARATOR ', '), CURDATE(), DATE_FORMAT(d, '%Y-%m'), DATE_SUB(CURDATE(), INTERVAL 1 YEAR) FROM t")
+    result = validate_sql(sql, "mysql", ANALYTIC_TABLES, BLOCKED, default_limit=1000)
+    assert result.ok, result.error
+
+
+# --- Review finding C2: a CTE named after a real table must not hide that table -------------
+def test_cte_shadowing_cannot_hide_pii():
+    assert_rejected("WITH patients AS (SELECT ssn AS x FROM public.patients) SELECT x FROM patients")
+    assert_rejected("WITH patients AS (SELECT * FROM public.patients) SELECT * FROM patients")
+    assert_rejected("WITH patients AS (SELECT ssn AS x FROM patients) SELECT x FROM patients")
+
+
+def test_cte_shadowing_cannot_reach_catalog():
+    assert_rejected("WITH pg_stat_activity AS (SELECT * FROM pg_catalog.pg_stat_activity) "
+                    "SELECT query FROM pg_stat_activity")
+    assert_rejected("WITH patients AS (SELECT usename FROM pg_user) SELECT usename FROM patients")
+
+
+def test_normal_cte_still_allowed():
+    sql = "WITH d AS (SELECT patient FROM conditions WHERE description ILIKE '%diabetes%') SELECT count(*) FROM d"
+    assert check(sql).ok
+
+
+def test_tables_in_with_shadowing_cte():
+    assert tables_in("WITH patients AS (SELECT id FROM conditions) SELECT id FROM patients", "postgres") == ["conditions"]
 
 
 def test_tables_in():

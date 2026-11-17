@@ -17,6 +17,8 @@ Rules:
 - Be brief: one to four sentences, or a short markdown list/table when listing several items.
 - End with the sources in the form "Source: <database.table>, ...".
 - If the results were truncated, say the list is partial.
+- Do not show internal ID columns (long codes like 007a32fb-33a3-...) unless the user asked for IDs;
+  show names, dates and descriptions instead.
 - Do not give medical advice; describe the data."""
 
 
@@ -45,7 +47,8 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
 @timed("synthesize")
 def synthesize(state: ChatState, deps: Deps) -> dict:
     result = state["result"]
-    if result.total_rows == 0:
+    all_empty = all(v is None for row in result.rows for v in row)  # e.g. max(date) over nothing -> [[None]]
+    if result.total_rows == 0 or all_empty:
         where = ", ".join(state.get("sources") or []) or "the database"
         return {"kind": "answer", "answer": f"No records found for that question (searched {where})."}
     return {"kind": "answer", "answer": draft_answer(state, deps)}

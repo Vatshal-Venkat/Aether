@@ -75,6 +75,25 @@ def test_schema_endpoint_no_pii(client):
     assert patients["description"]
 
 
+def _db_down(*args, **kwargs):
+    from sqlalchemy.exc import OperationalError
+
+    raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+
+def test_patients_503_when_db_down(client, monkeypatch):
+    # Review I3: a database outage is a friendly 503, not a 500 stack trace.
+    monkeypatch.setattr("app.api.catalog_routes.list_patients", _db_down)
+    resp = client.get("/api/patients")
+    assert resp.status_code == 503 and "database" in resp.json()["detail"].lower()
+
+
+def test_chat_patient_check_503_when_db_down(client, monkeypatch):
+    monkeypatch.setattr("app.api.chat.patient_exists", _db_down)
+    resp = client.post("/api/chat", json={"message": "my meds?", "role": "patient", "patient_id": "p2"})
+    assert resp.status_code == 503 and "database" in resp.json()["detail"].lower()
+
+
 def test_chat_503_when_pipeline_unavailable():
     app = create_app(with_pipeline=False)
     resp = TestClient(app).post("/api/chat", json={"message": "hi", "role": "clinician"})

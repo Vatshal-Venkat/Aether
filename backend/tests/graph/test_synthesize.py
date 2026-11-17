@@ -22,12 +22,19 @@ def test_empty_result_no_llm_call():
     assert out["answer"].startswith("No records found")
 
 
+def test_all_null_result_counts_as_no_records():
+    # Review I2: "SELECT max(date) FROM allergies" for someone with no allergies returns [[None]].
+    out = synthesize(_state([[None]], columns=("last_allergy",)), make_deps(ScriptedLLM()))
+    assert out["answer"].startswith("No records found")
+
+
 def test_synthesize_uses_rows_and_sources_in_prompt():
     llm = ScriptedLLM("There are 111 patients (source: clinical_db.patients).")
     out = synthesize(_state([[111]]), make_deps(llm))
     assert out["answer"].startswith("There are 111 patients")
     prompt = llm.prompt_text()
     assert "111" in prompt and "clinical_db.patients" in prompt
+    assert "internal id" in prompt.lower()  # tells the AI not to show UUIDs unless asked
 
 
 def test_verify_passes_clean_answer_without_llm():

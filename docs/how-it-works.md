@@ -70,7 +70,13 @@ turns text like `2017-02-22T04:27:13Z` into real dates, and marks ID columns as 
 **Why it matters:** the AI writes far fewer mistakes when names are simple and consistent,
 and real dates let us ask things like "visits in the last year".
 
-### Step 3 — Building the rooms (setup script) ✅ *(waiting for database passwords to run)*
+**A lesson learned from testing:** there are two kinds of "date". A *birthday* (`1985-03-21`) is just a
+calendar day. A *visit time* (`2017-02-22T04:27:13Z`) is an exact moment. At first both were stored as
+moments, so on a computer set to India time every birthday showed up as "5:30 in the morning", and on
+a computer behind UTC it would have shown the **previous day**. Now calendar days are stored as plain
+dates, and Aether always reads exact moments in UTC (world standard time), so every computer shows the same thing.
+
+### Step 3 — Building the rooms (setup script) ✅ *(ran successfully: all 18 tables, ~180,000 rows)*
 **What we built:** one command, `python -m scripts.setup_databases --reset`, that creates both
 databases, copies every spreadsheet in, adds fast lookup lists (*indexes*) by patient, and
 creates a special account called **`chatbot_ro`** ("read-only").
@@ -79,7 +85,7 @@ creates a special account called **`chatbot_ro`** ("read-only").
 never change or delete anything. Even if the AI wrote a harmful command, the database
 would refuse it. **Analogy:** the librarian gets a visitor's pass — reading room only.
 
-### Step 4 — The privacy filter (row-level security) ✅ *(waiting for passwords to test)*
+### Step 4 — The privacy filter (row-level security) ✅ *(tested on the real database)*
 **What we built:** a rule inside PostgreSQL itself: *"a clinician may see every row; a patient
 may only see rows that belong to them."* Before every question, Aether pins a small note
 on the request — "this is a clinician" or "this is patient X" — and the database filters
@@ -122,6 +128,21 @@ It also adds a **LIMIT** so nobody accidentally pulls a million rows.
 
 **Analogy:** a security guard who reads every book request slip, word by word, before the
 librarian is allowed to walk to the shelf.
+
+> **What an independent review caught (and why "allow-lists" beat "block-lists").**
+> After everything was built, a fresh reviewer attacked the safety inspector and found two real holes:
+> 1. PostgreSQL has a function, `query_to_xml`, that runs a query **hidden inside a piece of text**. No
+>    inspector can read inside the text, so a query could use it to secretly say "I'm a doctor now" and
+>    read all 111 patients — even in patient mode. Our inspector had a list of *forbidden* functions, and
+>    this one wasn't on it.
+>    **Fix:** we flipped the rule. Now there's a list of *allowed* functions (counting, averaging, dates,
+>    text…) and **everything else is refused**. A forbidden-list only stops the dangers you thought of;
+>    an allowed-list also stops the ones you didn't.
+> 2. A query could create a temporary result **named "patients"** and use it to confuse the inspector about
+>    which "patients" was the real table. **Fix:** the inspector now works out, step by step, which name
+>    refers to which thing.
+>
+> Both attacks are now permanent tests that run against the real database.
 
 ### Step 8 — The AI connection ✅
 **What we built:** one doorway to the AI service. By default it's **Groq** (free, very fast);
@@ -181,7 +202,41 @@ FastAPI also gives a free interactive page at `http://localhost:8000/docs` to tr
 Every answer comes back with **the SQL that was run** (including failed attempts), **the
 sources** (e.g. `clinical_db.medications`) and **how long each step took** — nothing is hidden.
 
-*A real example traced through every step will be added after the first live run.* 🚧
+### A real example, step by step
+
+Fake patient **Angelyn934 Harris789** opens Aether in *patient* mode and asks:
+**"What medications am I currently taking?"**
+
+1. **Route** (0.7 s) — the AI decides: a question about *her own* data → answerable from the medical-records database.
+2. **Pick tables** (instant) — the word "medications" matches the `medications` table; the dictionary
+   adds the hint *"active medication = no stop date"*.
+3. **Write SQL** (0.9 s) — the AI writes:
+   ```sql
+   SELECT description AS medication, start::date AS start_date, stop::date AS stop_date,
+          base_cost, payer_coverage, totalcost, dispenses
+   FROM medications
+   WHERE stop IS NULL OR stop > CURRENT_TIMESTAMP
+   ```
+   Notice: **nothing in this query says "only Angelyn's medications"** — the AI doesn't even know her ID.
+4. **Safety check** (instant) — read-only, known table, no private columns → approved (a LIMIT is added).
+5. **Run** (instant) — before running, Aether tells PostgreSQL *"this is patient Angelyn934"*. The database's
+   own privacy rule hides every other patient's rows. Result: **13 rows — exactly her 13 active medications**
+   (we double-checked against the database directly).
+6. **Retry** — not needed this time.
+7. **Write answer** (1 s) — the AI lists the 13 medicines (lisinopril, metformin, insulin, aspirin…) and adds
+   *"Source: clinical_db.medications"*.
+8. **Check numbers** (instant) — every number in the answer (doses like "500 MG", "81 MG") appears in the rows → passes.
+
+**Total: about 3 seconds.** If she then asks *"How many patients have diabetes?"*, step 1 politely refuses
+in 0.6 s — and even if it hadn't, step 5 would only ever have counted *her*.
+
+| Live test (first run) | Who | Result | Time |
+|---|---|---|---|
+| How many patients are in the system? | doctor | 111 ✅ | 2.1 s |
+| Which 5 conditions are most common? | doctor | correct top 5 with counts ✅ | 2.4 s |
+| What medications am I currently taking? | patient | exactly her 13 ✅ | 2.9 s |
+| How many patients have diabetes? | patient | refused ✅ | 0.7 s |
+| What's the weather today? | doctor | "I can only answer questions about the health records…" ✅ | 0.6 s |
 
 ## 6. Doctor view vs Patient view
 
