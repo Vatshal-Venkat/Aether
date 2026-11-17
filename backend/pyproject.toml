@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "db: needs the real PostgreSQL/MySQL databases (auto-skipped when unreachable)",
+]

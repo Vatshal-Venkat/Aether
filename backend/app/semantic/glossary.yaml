@@ -1,0 +1,126 @@
+# The glossary — Aether's small "semantic layer".
+# Plain English: a dictionary the AI reads before writing SQL, so that everyone means the
+# same thing by "HbA1c", "active medication" or "what insurance paid". Edit freely: no code change needed.
+
+tables:
+  # --- clinical_db (PostgreSQL) ---
+  patients: One row per (fake) person — name, birth/death date, gender, race, address, lifetime healthcare expenses.
+  encounters: One row per visit (wellness check, emergency, inpatient stay...). Links patient, provider, organization and payer.
+  conditions: Diagnoses a patient has had (e.g. diabetes, hypertension), with start and stop dates.
+  observations: Measurements and lab results (vital signs, blood tests, survey scores), one value per row.
+  medications: Prescriptions — drug, start/stop dates, cost, what insurance covered, reason.
+  procedures: Procedures performed during visits (tests, surgeries, therapies) with cost.
+  immunizations: Vaccines given, with date and cost.
+  allergies: Allergies and intolerances, with reaction and severity.
+  careplans: Care plans (e.g. diabetes self-management) with reason and dates.
+  devices: Medical devices assigned to the patient (e.g. glucose monitor).
+  imaging_studies: Imaging (X-ray, CT...) with body site and modality.
+  supplies: Medical supplies used during visits.
+  # --- billing_db (MySQL) ---
+  organizations: Hospitals and clinics — name, address, revenue, utilization.
+  providers: Doctors and clinicians — name, speciality, organization they work for.
+  payers: Insurance companies (and NO_INSURANCE) — totals covered and uncovered.
+  payer_transitions: Which insurer covered which patient, over which date range.
+  claims: One insurance claim per billed service, with diagnosis codes and outstanding balances.
+  claims_transactions: Line items of claims — charges, payments, adjustments, transfers.
+
+columns:
+  patients.first: First name (Synthea adds digits, e.g. "Abe604" — that is the real stored value).
+  patients.last: Last name (with digits, e.g. "Bode78").
+  patients.deathdate: NULL means the patient is alive.
+  patients.healthcare_expenses: Lifetime healthcare spending by the patient.
+  patients.healthcare_coverage: Lifetime amount covered by insurers.
+  encounters.encounterclass: "Visit type: ambulatory, wellness, outpatient, emergency, urgentcare, inpatient, virtual, home, snf, hospice."
+  encounters.provider: Id of the doctor — matches providers.id in billing_db.
+  encounters.organization: Id of the hospital/clinic — matches organizations.id in billing_db.
+  encounters.payer: Id of the insurer — matches payers.id in billing_db.
+  encounters.total_claim_cost: Total billed for the visit.
+  encounters.payer_coverage: Amount of the visit paid by the insurer.
+  conditions.stop: NULL means the condition is ongoing.
+  conditions.description: "Diagnosis name, e.g. 'Diabetes mellitus type 2 (disorder)', 'Essential hypertension (disorder)'."
+  observations.description: "What was measured, e.g. 'Hemoglobin A1c/Hemoglobin.total in Blood', 'Systolic Blood Pressure'."
+  observations.value: "Stored as TEXT. When type = 'numeric', CAST(value AS NUMERIC) before comparing or averaging."
+  observations.type: "'numeric' or 'text' — says how to read value."
+  observations.category: "laboratory, vital-signs, survey, social-history, exam, procedure, therapy, imaging."
+  observations.units: Unit of the value (e.g. %, mg/dL, mm[Hg], kg).
+  medications.stop: NULL means the medication is still active.
+  medications.code: RxNorm drug code.
+  medications.totalcost: Total cost of all dispenses of this prescription.
+  medications.payer_coverage: Amount the insurer covered.
+  allergies.severity1: Severity of the first listed reaction.
+  claims.patientid: Id of the patient — matches patients.id in clinical_db.
+  claims.providerid: Id of the doctor — matches providers.id.
+  claims.outstanding1: Amount still owed by the primary insurer.
+  claims.outstandingp: Amount still owed by the patient.
+  claims_transactions.type: "CHARGE, PAYMENT, ADJUSTMENT, TRANSFERIN, TRANSFEROUT."
+  claims_transactions.amount: Money amount of the line item.
+  providers.speciality: Medical speciality of the provider.
+  payers.name: Insurer name (NO_INSURANCE means uninsured).
+
+terms:
+  - term: HbA1c
+    meaning: Average blood sugar over ~3 months, in %. 6.5% or higher suggests diabetes; above 8% is poorly controlled.
+    sql_hint: "observations.description = 'Hemoglobin A1c/Hemoglobin.total in Blood', CAST(value AS NUMERIC)"
+    db: clinical
+  - term: blood sugar / glucose
+    meaning: Glucose level in blood, mg/dL.
+    sql_hint: "observations.description IN ('Glucose [Mass/volume] in Blood', 'Glucose [Mass/volume] in Serum or Plasma')"
+    db: clinical
+  - term: blood pressure
+    meaning: Two numbers, systolic over diastolic, in mm[Hg]. 130/80 or higher is high.
+    sql_hint: "observations.description IN ('Systolic Blood Pressure', 'Diastolic Blood Pressure')"
+    db: clinical
+  - term: cholesterol
+    meaning: Total, LDL ("bad") and HDL ("good") cholesterol in mg/dL.
+    sql_hint: "observations.description LIKE 'Cholesterol%'"
+    db: clinical
+  - term: BMI
+    meaning: Body mass index (weight relative to height). 30 or more is obese.
+    sql_hint: "observations.description = 'Body mass index (BMI) [Ratio]'"
+    db: clinical
+  - term: diabetes
+    meaning: Type 2 diabetes and its complications (prediabetes is separate).
+    sql_hint: "conditions.description ILIKE '%diabetes%' (exclude 'Prediabetes%' unless asked)"
+    db: clinical
+  - term: hypertension
+    meaning: High blood pressure diagnosis.
+    sql_hint: "conditions.description = 'Essential hypertension (disorder)'"
+    db: clinical
+  - term: active medication
+    meaning: A prescription that has not ended.
+    sql_hint: "medications.stop IS NULL"
+    db: clinical
+  - term: ongoing condition
+    meaning: A diagnosis that has not resolved.
+    sql_hint: "conditions.stop IS NULL"
+    db: clinical
+  - term: age
+    meaning: Years since birth (until death if deceased).
+    sql_hint: "date_part('year', age(coalesce(deathdate, now()), birthdate))"
+    db: clinical
+  - term: visit
+    meaning: Any encounter with the healthcare system.
+    sql_hint: "encounters table; filter encounterclass for a visit type"
+    db: clinical
+  - term: visit cost
+    meaning: What a visit was billed, and how much the insurer paid. Use for 'how much did my visit cost'.
+    sql_hint: "encounters.total_claim_cost, encounters.payer_coverage"
+    db: clinical
+  - term: insurance payment / amount owed
+    meaning: Authoritative money questions about claims, payments and balances come from billing_db.
+    sql_hint: "claims_transactions (type = 'PAYMENT'), claims.outstanding1 / outstandingp"
+    db: billing
+
+pii_columns:
+  - patients.ssn
+  - patients.drivers
+  - patients.passport
+
+join_keys:
+  - encounters.patient = patients.id
+  - encounters.provider = providers.id   (cross-database)
+  - encounters.organization = organizations.id   (cross-database)
+  - encounters.payer = payers.id   (cross-database)
+  - claims.patientid = patients.id   (cross-database)
+  - claims_transactions.claimid = claims.id
+  - providers.organization = organizations.id

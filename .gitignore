@@ -1,0 +1,17 @@
+# Secrets — never commit
+backend/.env
+.env
+
+# Downloaded / generated data
+backend/data/
+backend/chroma/
+
+# Python
+.venv/
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Tool scratch space
+.superpowers/

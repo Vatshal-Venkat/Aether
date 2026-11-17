@@ -1,0 +1,23 @@
+# Web API
+fastapi>=0.163
+uvicorn[standard]>=0.54
+# LLM orchestration
+langgraph>=1.2
+langchain-core>=1.8
+langchain-groq>=1.2
+langchain-google-genai>=4.5
+langchain-ollama>=1.1
+# Databases
+sqlalchemy>=2.1
+psycopg[binary]>=3.3
+pymysql>=1.2
+cryptography>=50.0
+# SQL parsing / safety
+sqlglot>=30.32
+# Data + config
+pandas>=3.1
+pydantic-settings>=2.16
+pyyaml>=6.0
+httpx>=0.28
+# Tests
+pytest>=9.2
