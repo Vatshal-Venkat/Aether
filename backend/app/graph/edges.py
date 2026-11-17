@@ -39,3 +39,8 @@ def after_next_step(state: ChatState) -> Literal["inject_schema", "merge"]:
     """next_step already moved `step` on; it only clears `result` when another step should run."""
     plan = state.get("plan") or []
     return "inject_schema" if state.get("step", 0) < len(plan) and state.get("result") is None else "merge"
+
+
+def after_merge(state: ChatState) -> Literal["retrieve", "synthesize"]:
+    """A hybrid question looks up the drug labels of the medicines its rows mention."""
+    return "retrieve" if state["route"].kind == "hybrid" else "synthesize"

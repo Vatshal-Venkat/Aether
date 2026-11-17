@@ -53,17 +53,39 @@ def link_notes(state: ChatState) -> list[str]:
             "total you may aggregate."]
 
 
+def hybrid_notes(state: ChatState) -> list[str]:
+    """A hybrid question: the SQL only finds the records; drug-label facts are added afterwards."""
+    route = state.get("route")
+    if not route or route.kind != "hybrid":
+        return []
+    return ["This query only needs to find the records the question is about (e.g. the medication "
+            "descriptions). Side effects, warnings and other drug information are NOT in the database: they "
+            "come from FDA labels, added afterwards. Do not filter on it — return the records, and code will "
+            "check the labels."]
+
+
+HYBRID_STEP = ("list the records the question is about (e.g. the medications, with their descriptions), "
+               "ignoring the drug-information part of the question")
+
+
 @timed("generate_sql")
 def generate_sql(state: ChatState, deps: Deps) -> dict:
     step = current_step(state)
     db = step.db
-    question = (f"Overall question: {state['question']}\nThis step: {step.goal}"
-                if is_multi_step(state) else state["question"])
+    route = state.get("route")
+    if route and route.kind == "hybrid":
+        # Live test: given the bare question "...which have a boxed warning?", the SQL writer filtered on the
+        # warning (AND false) and returned nothing. So the database part is spelled out as this step's task.
+        question = f"Overall question: {state['question']}\nThis step: {HYBRID_STEP}"
+    elif is_multi_step(state):
+        question = f"Overall question: {state['question']}\nThis step: {step.goal}"
+    else:
+        question = state["question"]
     attempts = list(state.get("attempts") or [])
     reply = ask_text(
         deps.llm,
         sql_system(DIALECT_NAMES[db], state["role"]),
-        sql_user(question, state["schema_text"], step_attempts(state), link_notes(state)),
+        sql_user(question, state["schema_text"], step_attempts(state), link_notes(state) + hybrid_notes(state)),
     )
     attempts.append({"step": state.get("step", 0), "db": db, "sql": extract_sql(reply), "executed": None, "error": None})
     return {"attempts": attempts, "db": db}

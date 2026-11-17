@@ -56,6 +56,17 @@ If you already downloaded Synthea, unzip it into `backend/data/synthea/` and the
 (fast, keeps all data): `python -m scripts.setup_databases --rls-only`. Otherwise patient-mode and
 clinician-mode questions will return no rows, because the signature check no longer matches.
 
+## 6b. Build the drug-label library (for drug questions)
+*Why:* lets Aether answer "what are the side effects of metformin?" from official FDA labels.
+Needs internet once (about 150 small requests to the free openFDA service, plus a one-time
+~80 MB download of the small search model). Takes a few minutes; re-runs are quick.
+
+```bash
+python -m scripts.build_drug_index
+```
+
+Skip it and everything else still works — drug questions will just say the library isn't built.
+
 ## 7. Check everything
 ```bash
 python -m pytest

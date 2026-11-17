@@ -10,8 +10,9 @@ from typing import Annotated, Any, Literal, TypedDict
 from pydantic import BaseModel
 
 from app.db.engines import DbName
+from app.rag.store import Chunk
 
-RouteKind = Literal["sql", "out_of_scope", "refuse"]
+RouteKind = Literal["sql", "rag", "hybrid", "out_of_scope", "refuse"]
 AnswerKind = Literal["answer", "refusal", "out_of_scope", "error"]
 
 
@@ -19,6 +20,7 @@ class RouteDecision(BaseModel):
     kind: RouteKind
     databases: list[DbName] = []
     reason: str = ""
+    drugs: list[str] = []  # medicine names the router saw in the question (for drug-label lookups)
 
 
 class SqlAttempt(TypedDict, total=False):
@@ -91,4 +93,8 @@ class ChatState(TypedDict, total=False):
     kind: AnswerKind
     sources: list[str]
     unverified_numbers: list[str]
+    chunks: list[Chunk]            # drug-label passages found by retrieve
+    rag_problem: str | None        # "no_index" | "unknown_drug" | "missing_section" | None
+    rag_message: str               # the fixed answer for "missing_section"
+    rag_note: str                  # what retrieve checked (medicines, section, gaps) — shown to the AI
     timings: Annotated[dict[str, float], merge_dicts]

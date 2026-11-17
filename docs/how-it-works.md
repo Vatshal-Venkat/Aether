@@ -43,9 +43,9 @@ quickly. Aether uses two different ones on purpose — just like a real hospital
 |---|---|---|
 | **Medical records room** | PostgreSQL (`clinical_db`) | patients, visits, diagnoses, lab results, medicines, procedures, vaccines, allergies |
 | **Billing office** | MySQL (`billing_db`) | doctors, hospitals, insurance companies, claims and payments |
-| **Reference shelf** 🚧 | ChromaDB | official FDA drug-label text (side effects, warnings) |
+| **Reference shelf** | ChromaDB (`drug_labels`) | official FDA drug-label passages (uses, side effects, warnings, interactions) for the 152 medicines in our records |
 
-Both are free, open-source programs running on this laptop.
+All three are free, open-source programs running on this laptop.
 
 ---
 
@@ -223,7 +223,52 @@ patients. So we added a second lock:
 - The key is stored in a table the chatbot's account **cannot read**.
 - The database recomputes the fingerprint for every row. A changed note no longer matches → nothing is shown.
 
-Same attack after the change: **0 extra rows**. Cost: about 5 millionths of a second per row checked.
+Same attack after the change: **0 extra rows**.
+
+### Step 18 — The drug-label library (Plan 3) ✅
+Our databases say *which* medicines each patient takes, but nothing about the medicines themselves
+(what they're for, side effects, warnings). That knowledge lives in documents: the official
+**FDA drug labels** — the leaflet in the box. The FDA publishes them for free on **openFDA**.
+
+A one-time script (`python -m scripts.build_drug_index`):
+1. asks the database which medicines appear in our records (152 of them);
+2. fetches each one's official label from openFDA, by its standard drug code (RxNorm) — or, if that
+   fails, by its exact ingredient name. Only public drug codes are sent, never anything about a patient;
+3. keeps the useful sections: uses, dosage, warnings, boxed warning, contraindications, side effects,
+   drug interactions;
+4. cuts them into short passages (about a paragraph each, overlapping slightly so no fact is cut in half);
+5. turns each passage into an **embedding** and stores it in **ChromaDB**, a free database that runs on
+   this laptop.
+
+**What's an embedding?** A small AI model (also running locally, no internet needed after a one-time
+download) turns each passage into a list of 384 numbers — a kind of "meaning fingerprint". Passages about
+similar things get similar fingerprints. So the question *"what are the side effects?"* finds a passage
+titled *"Adverse reactions"* even though the words differ. That's **semantic search**.
+
+### Step 19 — Answering from documents (RAG) ✅
+**RAG** ("retrieval-augmented generation") means: *look it up first, then answer from what you found*.
+Like a pharmacist who opens the leaflet instead of answering from memory.
+
+For *"What are the side effects of lisinopril?"*:
+1. **Route** — the AI decides this is a drug-information question (kind `rag`) and notes the name "lisinopril".
+2. **Retrieve** — Aether looks only inside **lisinopril's** label and picks the 3 passages closest in meaning
+   to the question. Searching one drug at a time means a neighbouring drug's side effects can never sneak in.
+3. **Write answer** — the AI gets the passages, fenced off as *reference text, not instructions* (so a
+   strange sentence inside a document can't take control), and must cite each fact like
+   *"openFDA label: Lisinopril — Side effects"*. Every passage also comes back with a link to the official
+   label on DailyMed, the US government's label website.
+4. **Check numbers** — percentages like "dizziness (5.4%)" must appear in the passages.
+
+If you ask about a medicine that isn't in our library (say *Ozempic*), Aether answers *"I don't have the FDA
+label for that medicine"* — no AI guess. If the library hasn't been built, drug questions say how to build it,
+and everything else keeps working.
+
+### Step 20 — Records + documents together ("hybrid") ✅
+*"What are the side effects of the medications I'm taking?"* needs both: the database (which medicines are
+*mine*?) and the labels (what do they do?). Aether:
+1. runs the normal database path first — with all the privacy protection — to find *her* medicines;
+2. looks up the labels of **exactly those medicines** and nothing else;
+3. writes one answer citing both: `clinical_db.medications` and `openFDA label: … — Side effects`. Cost: about 5 millionths of a second per row checked.
 The key is derived from the database admin password, so there was nothing new to set up
 (if that password changes, re-run `python -m scripts.setup_databases --rls-only`).
 
@@ -237,7 +282,8 @@ The key is derived from the database admin password, so there was nothing new to
  ① ROUTE ──── not about our data? ──► "I can only answer questions about health records…"
      │   └─── patient asking about others? ──► "I can only answer about your own records."
      │   (decides: medical room, billing room, or both)
-     ▼
+     │   └─── a question about medicines in general? ──► RETRIEVE from the drug-label library ──┐
+     ▼                                                                                          │
  PLAN ── one room: one step.  Both rooms: two steps joined by a known link (doctor id, patient id…)
      ▼
  ┌─► ② PICK TABLES ── shows the AI only the few relevant tables of THIS step's room + dictionary entries
@@ -256,7 +302,10 @@ The key is derived from the database admin password, so there was nothing new to
      ▼
  MERGE ── line the two steps' results up on the shared id
      ▼
- ⑦ WRITE ANSWER ── using ONLY the rows that came back (none? → "No records found")
+ (records + documents question? → RETRIEVE the labels of the medicines in those rows)
+     ▼
+ ⑦ WRITE ANSWER ── using ONLY the rows and label passages found (none? → "No records found"),
+     │             citing tables and labels ("openFDA label: Lisinopril — Side effects")
      ▼
  ⑧ CHECK NUMBERS ── every number must exist in the results; else one rewrite, else a ⚠ warning
      ▼
@@ -381,6 +430,49 @@ Typical times: one database 3–7 s; two databases 10–25 s (two queries, somet
   out, and so did Gemini's. Aether answered "the AI service is rate-limited, try again" — the correct
   behaviour — but it is a reminder that a free AI service limits how much you can test in a day.
 
+### Report card after Plan 3 (drug labels)
+
+The library: **145 of the 152 medicines** in our records have an FDA label (4,140 passages). The 7 without one
+are combination birth-control packs, a heparin variant, and terfenadine — withdrawn from the market in 1998.
+
+| Question | Who | Result |
+|---|---|---|
+| What are the common side effects of metformin? | doctor | ✅ cites only metformin's label |
+| What is lisinopril used for? | doctor | ✅ hypertension, heart failure, after a heart attack — "Lisinopril — Uses" |
+| What are the side effects of Ozempic? | doctor | ✅ "I don't have the FDA label for that medicine" — nothing invented |
+| Can I take naproxen with lisinopril? | patient | ✅ may weaken the blood-pressure effect and strain the kidneys — both labels cited |
+| Side effects of the medications I'm currently taking? | patient | ✅ her medicines only (privacy filter), each from its own label |
+| Which of her current medications have a boxed warning? | doctor | ✅ exactly the 5 that do (checked against the stored labels) |
+| Show me *another patient's* medications | patient | ✅ refused instantly by code, no AI involved |
+
+**What this test taught us (and what we fixed):**
+- **Names in the data are messy.** About 45 medicine names start with a dose or pack size ("24 HR Metformin…",
+  "1 ML Enoxaparin…", "{28 (norethindrone…) } Pack"), so our "find the ingredient" rule found nothing for them.
+  And one label had two "Warnings" sections, which crashed the first build. Both fixed with tests.
+- **"Closest in meaning" isn't precise enough for a checklist question.** Asked which medicines have a boxed
+  warning, the first version read 5 of 12 labels, searched loosely, and answered "only lisinopril" — wrong.
+  Now, when a question names a part of the label (boxed warning, side effects, interactions…), Aether reads
+  exactly that part for every medicine (up to 12), and tells the AI what it checked and which labels don't
+  have that part. Same question afterwards: the correct 5.
+- **The database step tried to answer the label part.** It looked for "boxed warning" in the database (it isn't
+  there) and filtered everything out. Now, in a records + labels question, the database step is told plainly:
+  *just list the records — the label part comes afterwards.*
+- **A weaker AI let a privacy question through.** On a smaller model (we switched when the free daily allowance
+  ran out), a patient asking for another patient's medications wasn't refused. The database still showed only
+  her own rows — no leak — but the answer called them the other patient's. Now plain code checks first: in
+  patient mode, a question that names another patient from our records is refused before any AI is involved.
+  Lesson: **anything that must always hold should be checked by code, not by asking the AI nicely.**
+- **…but code checks can be too eager.** An independent reviewer found that this new check refused 63 of 111
+  patients when they asked about *their own doctor*, because Synthea reuses surnames like "Bosco882" for both
+  patients and doctors. Now a single name word only counts if no doctor has it; full names always count.
+  Measured on the real data: 0 wrong refusals, and all 380 "another patient's full name" tests still refused.
+- **Shortcuts in name matching picked wrong labels.** "insulin" → *insulin human* is handy, but the same rule
+  sent "sodium bicarbonate" to the *sodium fluoride* label and "vitamin D" to a vitamin B12 injection. The shortcut
+  now only applies when the rest of the name is a salt or form word ("metformin **er 500 mg**", "insulin **human**").
+  Known gap: "insulin glargine" still finds the human-insulin label.
+- **"Does amoxicillin have a boxed warning?"** used to get a vague "couldn't find anything". Now: *"The FDA label
+  for Amoxicillin has no 'Boxed warning' section"* — written by code, because "it has none" is the answer.
+
 ## 6. Doctor view vs Patient view
 
 There is no login (this is a practice project). Instead, each question says who is asking:
@@ -388,7 +480,8 @@ There is no login (this is a practice project). Instead, each question says who 
 | | Doctor (clinician) | Patient |
 |---|---|---|
 | Can see | every patient's records | only their **own** records |
-| Questions about other patients or totals across patients | ✅ allowed | ❌ politely refused |
+| Questions about other patients or totals across patients | ✅ allowed | ❌ politely refused (naming another patient is caught by code, before the AI) |
+| Drug information (FDA labels) | ✅ | ✅ general drug questions, and about their own medicines |
 | Company-wide totals (an insurer's revenue, a doctor's total visits) | ✅ | ❌ hidden — they describe other patients |
 | How it's enforced | — | ① the router refuses; ② medical room: the **database itself** hides other rows (row-level security, with a signed "who is asking" note); billing room: **our code rewrites the query** to only this patient's rows; ③ the safety check blocks the hidden totals |
 
@@ -428,3 +521,11 @@ use a paid service with that agreement, or run the AI on its own servers.
 - **Derived table** — a mini-table made by a query inside a query; our MySQL privacy filter swaps a real table for a filtered one.
 - **Query rewrite** — code changing a query after the AI wrote it (here: adding "only these rows").
 - **Signature / hash (SHA-256)** — a fingerprint of some text; change one letter and the fingerprint changes completely.
+- **RAG (retrieval-augmented generation)** — look the answer up in documents first, then let the AI write from what was found.
+- **Embedding / vector** — a list of numbers that captures what a passage *means*; similar meanings → similar numbers.
+- **Semantic search** — finding passages by meaning rather than by exact words.
+- **Chunk / passage** — a short piece of a long document, the unit that gets searched.
+- **ChromaDB** — the free, local database that stores passages with their embeddings and finds the closest ones.
+- **openFDA** — the US Food and Drug Administration's free public data service; we use its drug labels.
+- **DailyMed** — the US government's public website of official drug labels (our citation links point there).
+- **RxNorm code** — the standard number for a medicine in US health data (Synthea stores it in `medications.code`).

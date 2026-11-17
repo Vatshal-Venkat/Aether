@@ -19,5 +19,7 @@ pandas>=3.1
 pydantic-settings>=2.16
 pyyaml>=6.0
 httpx>=0.28
+# Drug-label search (local vector store + local embedding model)
+chromadb>=1.5,<2
 # Tests
 pytest>=9.2

@@ -39,8 +39,8 @@ def small_catalog() -> Catalog:
         "encounters": _cols("id", "start", "patient", "provider", "encounterclass", "description", "total_claim_cost"),
         "conditions": _cols("start", "stop", "patient", "description"),
         "observations": _cols("date", "patient", "category", "description", "value", "units", "type"),
-        "medications": _cols("start", "stop", "patient", "description", "totalcost"),
         "allergies": _cols("start", "patient", "description", "severity1"),
+        "medications": _cols("start", "stop", "patient", "description", "code", "totalcost"),
     }
     billing = {
         "providers": _cols("id", "name", "speciality", "organization", "encounters", "procedures"),
@@ -53,6 +53,45 @@ def small_catalog() -> Catalog:
     return Catalog(tables)
 
 
-def make_deps(llm, engines=None, **settings_overrides) -> Deps:
+def make_deps(llm, engines=None, store=None, **settings_overrides) -> Deps:
     settings = Settings(_env_file=None, **settings_overrides)
-    return Deps(settings=settings, llm=llm, catalog=small_catalog(), glossary=load_glossary(), engines=engines or {})
+    return Deps(settings=settings, llm=llm, catalog=small_catalog(), glossary=load_glossary(), engines=engines or {},
+                store=store)
+
+
+class FakeEmbedding:
+    """Deterministic stand-in for the real embedding model (no download in tests):
+    each word is hashed into one of 64 slots, so texts sharing words end up close together."""
+
+    def __new__(cls):
+        import zlib
+
+        import numpy as np
+        from chromadb.api.types import EmbeddingFunction
+
+        class _Fake(EmbeddingFunction):
+            def __init__(self):
+                pass
+
+            def __call__(self, input):
+                vectors = []
+                for text in input:
+                    v = np.zeros(64, dtype=np.float32)
+                    for word in text.lower().split():
+                        v[zlib.crc32(word.strip(".,;:()").encode()) % 64] += 1.0
+                    norm = float(np.linalg.norm(v)) or 1.0
+                    vectors.append(v / norm)
+                return vectors
+
+            @staticmethod
+            def name():
+                return "aether-fake"
+
+            def get_config(self):
+                return {}
+
+            @staticmethod
+            def build_from_config(config):
+                return _Fake()
+
+        return _Fake()

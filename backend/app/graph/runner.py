@@ -13,11 +13,13 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.db.catalog import build_catalog
 from app.db.engines import DbName, get_engine
+from app.db.patients import list_patients, list_provider_names
 from app.graph.build import build_graph
 from app.graph.deps import Deps
 from app.graph.state import AnswerKind, QueryResult
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.rag.store import DrugLabelStore
 from app.llm.client import LLMOutputError, _transient_errors, get_chat_model
 from app.semantic.glossary import load_glossary
 
@@ -30,6 +32,13 @@ class SqlRecord(BaseModel):
     error: str | None = None
 
 
+class DocumentRef(BaseModel):
+    """A drug-label passage the answer was based on, with a link to the official label."""
+    label: str
+    source_url: str
+    excerpt: str
+
+
 class ChatResult(BaseModel):
     answer: str
     kind: AnswerKind
@@ -37,6 +46,7 @@ class ChatResult(BaseModel):
     sources: list[str] = []
     table: QueryResult | None = None
     unverified_numbers: list[str] = []
+    documents: list[DocumentRef] = []
     timings: dict[str, float] = {}
 
 
@@ -49,6 +59,9 @@ def build_deps(settings: Settings) -> Deps:
         catalog=build_catalog(engines, glossary),
         glossary=glossary,
         engines=engines,
+        store=DrugLabelStore.open(settings.chroma_dir),  # None if not built: SQL questions still work
+        patient_names={p["id"]: p["name"] for p in list_patients(engines["clinical"])},
+        provider_names=list_provider_names(engines["billing"]),
     )
 
 
@@ -80,5 +93,7 @@ def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, sessi
         sources=final.get("sources") or [],
         table=final.get("result"),
         unverified_numbers=final.get("unverified_numbers") or [],
+        documents=[DocumentRef(label=c.label, source_url=c.source_url, excerpt=c.text[:300])
+                   for c in final.get("chunks") or []],
         timings=final.get("timings") or {},
     )

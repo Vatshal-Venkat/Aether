@@ -48,3 +48,21 @@ def test_cors_allows_localhost_vite(monkeypatch):
         headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
     )
     assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_health_reports_missing_index(monkeypatch, tmp_path):
+    monkeypatch.setattr(health, "get_settings", lambda: __import__("app.config", fromlist=["Settings"]).Settings(
+        _env_file=None, chroma_dir=tmp_path / "none"))
+    body = _client(monkeypatch).get("/health").json()
+    assert body["drug_labels"].startswith("missing") and "build_drug_index" in body["drug_labels"]
+    assert body["status"] == "ok"  # the drug library is optional: SQL questions still work
+
+
+def test_health_reports_chunks(monkeypatch, tmp_path):
+    from app.config import Settings
+    from app.rag.store import DrugLabelStore
+    from tests.fakes import FakeEmbedding
+    from tests.rag.test_store import LIS
+    DrugLabelStore.create(tmp_path / "c", embedding_function=FakeEmbedding()).add(LIS)
+    monkeypatch.setattr(health, "get_settings", lambda: Settings(_env_file=None, chroma_dir=tmp_path / "c"))
+    assert _client(monkeypatch).get("/health").json()["drug_labels"].startswith("ok: ")

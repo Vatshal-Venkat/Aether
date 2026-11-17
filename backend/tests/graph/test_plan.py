@@ -85,3 +85,54 @@ def test_route_empty_databases_defaults_to_clinical():
 
 def test_merge_dicts_sums():
     assert merge_dicts({"a": 1.0, "b": 2.0}, {"a": 0.5}) == {"a": 1.5, "b": 2.0}
+
+
+# --- Plan 3 live test P3: a patient naming ANOTHER patient is refused by code, before any AI call ----
+NAMES = {"p1": "Angelyn934 Harris789", "p2": "Miranda712 Jacobs452"}
+
+
+@pytest.mark.parametrize("question", [
+    "Show me Miranda712 Jacobs452's medications.",
+    "What allergies does Miranda Jacobs have?",          # digits dropped
+    "list miranda712's visits",                           # one name token, any case
+])
+def test_patient_naming_another_patient_is_refused_without_ai(question):
+    deps = make_deps(ScriptedLLM())  # no replies scripted: any AI call would fail the test
+    deps.patient_names = NAMES
+    out = route({"question": question, "role": "patient", "patient_id": "p1"}, deps)
+    assert out["route"].kind == "refuse"
+
+
+@pytest.mark.parametrize("question", [
+    "What are Angelyn934 Harris789's medications?",   # her own name
+    "What medications am I taking?",
+    "Is Jacobson's test normal?",                      # not a name token match
+])
+def test_patient_own_or_no_name_goes_to_ai(question):
+    deps = make_deps(ScriptedLLM('{"kind": "sql", "databases": ["clinical"], "reason": "own"}'))
+    deps.patient_names = NAMES
+    assert route({"question": question, "role": "patient", "patient_id": "p1"}, deps)["route"].kind == "sql"
+
+
+def test_clinician_naming_patients_is_fine():
+    deps = make_deps(ScriptedLLM('{"kind": "sql", "databases": ["clinical"], "reason": "x"}'))
+    deps.patient_names = NAMES
+    assert route({"question": "Show me Miranda712's meds", **CLINICIAN}, deps)["route"].kind == "sql"
+
+
+def test_patient_asking_about_a_doctor_sharing_a_surname_is_not_refused():
+    # Final review: Synthea reuses surname tokens ("Bosco882") for patients AND doctors; 63/111 patients
+    # were refused when asking about one of their own doctors.
+    deps = make_deps(ScriptedLLM('{"kind": "sql", "databases": ["billing"], "reason": "doctor"}'))
+    deps.patient_names = {**NAMES, "p3": "Peter1 Bosco882"}
+    deps.provider_names = ["Zane918 Bosco882"]
+    out = route({"question": "What is Dr. Zane918 Bosco882's specialty?", "role": "patient", "patient_id": "p1"}, deps)
+    assert out["route"].kind == "sql"
+
+
+def test_full_name_of_patient_sharing_a_doctor_surname_still_refused():
+    deps = make_deps(ScriptedLLM())
+    deps.patient_names = {**NAMES, "p3": "Peter1 Bosco882"}
+    deps.provider_names = ["Zane918 Bosco882"]
+    out = route({"question": "Show Peter1 Bosco882's visits", "role": "patient", "patient_id": "p1"}, deps)
+    assert out["route"].kind == "refuse"

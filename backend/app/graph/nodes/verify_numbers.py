@@ -16,9 +16,14 @@ from app.safety.number_check import find_unverified_numbers
 
 
 def _unverified(answer: str, state: ChatState) -> list[str]:
-    result = state["result"]
-    extra = {float(result.total_rows), float(len(result.rows)), float(date.today().year)}
-    return find_unverified_numbers(answer, result.rows, state["question"], extra)
+    """Numbers must come from the result rows or from the drug-label passages the AI was shown."""
+    result = state.get("result")
+    rows = list(result.rows) if result else []
+    rows += [[c.text] for c in state.get("chunks") or []]
+    extra = {float(date.today().year), float(len(state.get("chunks") or []))}
+    if result:
+        extra |= {float(result.total_rows), float(len(result.rows))}
+    return find_unverified_numbers(answer, rows, state["question"], extra)
 
 
 @timed("verify_numbers")

@@ -75,3 +75,17 @@ def test_verify_flags_after_second_failure():
     out = verify_numbers(state, make_deps(llm))
     assert out["unverified_numbers"] == ["113"]
     assert "could not be matched" in out["answer"]
+
+
+def test_patient_mode_answer_knows_rows_are_the_patients_own():
+    # Live test P3 (smaller model): a patient asked for ANOTHER patient's medications, the router let it
+    # through, and the database correctly returned only her own rows — but the answer presented them as
+    # if they answered the question. The answer-writer must know the rows are always the asker's own.
+    llm = ScriptedLLM("I can only show your own records.")
+    synthesize({**_state([[3]]), "role": "patient", "patient_id": "p1"}, make_deps(llm))
+    system = str(llm.calls[0][0].content)
+    assert "only the current patient's own records" in system
+    assert "about someone else" in system
+    llm2 = ScriptedLLM("There are 3.")
+    synthesize(_state([[3]]), make_deps(llm2))
+    assert "only the current patient's own records" not in str(llm2.calls[0][0].content)

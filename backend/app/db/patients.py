@@ -34,3 +34,9 @@ def patient_exists(engine: Engine, patient_id: str) -> bool:
     finally:
         trans.rollback()
         conn.close()
+
+
+def list_provider_names(engine: Engine) -> list[str]:
+    """Doctors' names (billing_db.providers is a reference table: no patient filtering involved)."""
+    with engine.connect() as conn:
+        return list(conn.execute(text("SELECT name FROM providers")).scalars())

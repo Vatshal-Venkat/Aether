@@ -56,6 +56,13 @@ class Settings(BaseSettings):
 
     data_dir: Path = BACKEND_DIR / "data"
 
+    # Drug-label library (RAG): where it is stored and how many passages to look up
+    chroma_dir: Path = BACKEND_DIR / "chroma"
+    rag_top_k: int = 6          # passages for a general drug question
+    rag_per_drug_k: int = 3     # passages per named medicine (fewer when many medicines are involved)
+    rag_max_drugs: int = 12     # most medicines looked up for one question
+    rag_max_chunks: int = 18    # total passages budget for one answer
+
     def rls_key(self) -> str:
         """The signing key: RLS_SECRET if set, otherwise derived from the PG admin password."""
         if self.rls_secret:
