@@ -73,6 +73,23 @@ python -m pytest
 ```
 Database tests say **skipped** (with the reason) if a database or password isn't set up yet.
 
+## 8. Run the website
+*Why:* the chat page you use in the browser. Needs **Node.js 20.19 or newer** (free, nodejs.org — the LTS installer).
+
+Two terminals:
+
+```bash
+# terminal 1 — the backend (from backend/, venv active)
+uvicorn app.main:app --port 8000
+
+# terminal 2 — the website (from frontend/)
+npm install        # first time only
+npm run dev
+```
+
+Open **http://localhost:5173**. The small dot top-right breathes while the backend is running and goes
+hollow if it isn't. Run the website's own tests with `npm test`.
+
 ## Optional: look at the data yourself
 **DBeaver Community** (https://dbeaver.io) opens both databases side by side. pgAdmin
 (installed with PostgreSQL) and MySQL Workbench also work.

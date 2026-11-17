@@ -20,6 +20,8 @@ def _unverified(answer: str, state: ChatState) -> list[str]:
     result = state.get("result")
     rows = list(result.rows) if result else []
     rows += [[c.text] for c in state.get("chunks") or []]
+    # Citation names can contain numbers ("openFDA label: Metformin Er 500 Mg"): they're sources, not claims.
+    rows += [[s] for s in state.get("sources") or []]
     extra = {float(date.today().year), float(len(state.get("chunks") or []))}
     if result:
         extra |= {float(result.total_rows), float(len(result.rows))}

@@ -274,6 +274,30 @@ The key is derived from the database admin password, so there was nothing new to
 
 ---
 
+### Step 21 — The website ✅
+Aether now has a web page (open **http://localhost:5173** while the backend runs). It is deliberately
+**black and white only**, with 1-pixel "hairline" lines and no shadows — calm, so the data stands out.
+
+- **Top bar:** the AETHER name; the **Clinician | Patient** switch (a solid pill slides between them); in
+  patient mode a searchable list of the 111 fake patients; a small **status orb** that breathes while the
+  backend is running and goes hollow if it isn't; and a dark/light switch.
+- **Thinking orbs:** while the backend works, soft spheres drift, touch and melt into each other (an
+  SVG "goo" effect: blur everything, then sharpen the edges, so overlapping circles fuse like drops of liquid).
+  Beside them a caption names the step — *Routing… Writing SQL… Checking numbers…*. Honest note: until
+  streaming exists (Plan 4) the page can't see the backend's real step, so the captions advance on a timer.
+- **Answers** rise in line by line. Under each one, a quiet line says where the facts came from and how long it
+  took, then hairline buttons open: **SQL** (every query, on which database, failed tries struck through —
+  you can watch the self-correction and the privacy filter that code added), **Table** (the rows), **Labels**
+  (the FDA passages, each with a link to the official label) and **Timeline** (a bar per step).
+- **Switching Clinician ↔ Patient wipes the conversation** and starts fresh, so answers from one view never
+  appear in the other — and an answer still on its way from the old view is thrown away.
+- If your computer asks for less motion (an accessibility setting), the orbs stand still.
+
+Testing it in a real browser found things the automated tests couldn't: the AI's own "Source:" line repeated
+the source line under the answer; ten label citations crowded that line (now "clinical_db.medications · 10 FDA
+labels", with the labels in their own panel); and a backend bug — a drug *named* "Metformin ER **500** mg" made
+the fact-checker flag "500" as an unchecked number. All fixed, each with a test first.
+
 ## 5. What happens when you ask a question
 
 ```

@@ -1,0 +1,134 @@
+/* Orbs: the thinking cluster, the status dot, and the small orb beside each answer. */
+
+.orbs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  color: var(--orb);
+}
+
+.orbs__svg {
+  display: block;
+  overflow: visible;
+}
+
+.orbs--large .orbs__svg {
+  width: 220px;
+  height: 220px;
+  margin-bottom: -28px; /* the loops rarely reach the bottom of the drawing area */
+}
+
+.orbs--medium {
+  flex-direction: row;
+  gap: 6px;
+}
+
+/* Centre the cluster on the answer-orb column (the column is 11 px wide). */
+.orbs--medium .orbs__svg {
+  width: 112px;
+  height: 112px;
+  margin-left: -50px;
+}
+
+.orbs__body circle {
+  fill: currentColor;
+}
+
+/* A soft glow behind the core: the same circle, heavily blurred and faint. */
+.orbs__halo circle {
+  fill: currentColor;
+  opacity: 0.16;
+  filter: blur(18px);
+  transform-origin: center;
+}
+
+.orbs:not(.orbs--active) .orbs__body {
+  opacity: 0.92;
+}
+
+.orbs__caption {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.orbs__dots {
+  display: inline-block;
+  margin-left: 2px;
+  animation: orb-dots 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes orb-dots {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* ---- status orb (top bar) ---- */
+.status-orb {
+  position: relative;
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  transition: background-color var(--t) var(--ease);
+}
+
+.status-orb[data-state="up"] {
+  background: var(--ink);
+  animation: orb-breathe 3.2s var(--ease-in-out) infinite;
+}
+
+.status-orb[data-state="up"]::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  animation: orb-ripple 3.2s var(--ease) infinite;
+}
+
+.status-orb[data-state="degraded"] {
+  background: linear-gradient(90deg, var(--ink) 50%, transparent 50%);
+}
+
+.status-orb[data-state="down"] {
+  background: transparent;
+  border-color: var(--muted);
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(0.82); opacity: 0.75; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes orb-ripple {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(3.2); opacity: 0; }
+}
+
+/* ---- answer orb ---- */
+.answer-orb {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  margin-top: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+}
+
+.answer-orb[data-kind="refusal"],
+.answer-orb[data-kind="out_of_scope"] {
+  background: transparent;
+}
+
+.answer-orb[data-kind="error"] {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--muted);
+}

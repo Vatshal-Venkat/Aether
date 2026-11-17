@@ -1,0 +1,49 @@
+/* Design tokens — the only colours, lines, fonts and timings the website may use.
+   Plain English: one place to change the whole look. Black, white and five grays; every line is
+   a 1-pixel "hairline"; no shadows. Dark is the default, light is the same scale flipped. */
+
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root,
+:root[data-theme="dark"] {
+  --paper: #000;          /* page background */
+  --ink: #fff;            /* main text */
+  --gray-1: #0d0d0d;      /* raised surfaces */
+  --gray-2: #1f1f1f;      /* hairlines */
+  --gray-3: #3a3a3a;      /* strong hairlines, hover */
+  --gray-4: #8a8a8a;      /* secondary text */
+  --gray-5: #c4c4c4;      /* tertiary emphasis */
+  --line: var(--gray-2);
+  --line-strong: var(--gray-3);
+  --muted: var(--gray-4);
+  --orb: #fff;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --paper: #fff;
+  --ink: #000;
+  --gray-1: #f6f6f6;
+  --gray-2: #e6e6e6;
+  --gray-3: #c9c9c9;
+  --gray-4: #6b6b6b;
+  --gray-5: #3b3b3b;
+  --orb: #000;
+  color-scheme: light;
+}
+
+:root {
+  --hairline: 1px solid var(--line);
+  --hairline-strong: 1px solid var(--line-strong);
+  --font: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Code", monospace;
+  --radius-pill: 999px;
+  --radius: 2px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);     /* fast out, soft landing */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --t-fast: 160ms;
+  --t: 320ms;
+  --t-slow: 700ms;
+  --column: 760px;
+}

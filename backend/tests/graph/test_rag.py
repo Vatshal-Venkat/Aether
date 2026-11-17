@@ -215,3 +215,13 @@ def test_hybrid_row_medicine_without_label_is_mentioned(store, clinical):
                       "Lisinopril may cause cough. Source: openFDA label: Lisinopril — Side effects")
     ask(llm, "Side effects of my medicines?", store, engines={"clinical": clinical}, role="patient", patient_id="p1")
     assert "No label in this library for: Terfenadine 60 MG Oral Tablet" in llm.prompt_text(2)
+
+
+def test_numbers_inside_citation_labels_are_not_flagged():
+    # Seen in the web UI: "Source: openFDA label: Metformin Er 500 Mg — Side effects" got "500" flagged.
+    chunks = [Chunk(text="Diarrhea (10%) was reported.", drug="metformin er 500 mg", section="Side effects",
+                    source_url="u", distance=0.1)]
+    state = {"question": "side effects of metformin?", "result": None, "chunks": chunks, "role": "clinician",
+             "sources": [chunks[0].label],
+             "answer": "Diarrhea (10%). Source: openFDA label: Metformin Er 500 Mg — Side effects"}
+    assert verify_numbers(state, make_deps(ScriptedLLM()))["unverified_numbers"] == []
