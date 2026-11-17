@@ -281,10 +281,13 @@ Aether now has a web page (open **http://localhost:5173** while the backend runs
 - **Top bar:** the AETHER name; the **Clinician | Patient** switch (a solid pill slides between them); in
   patient mode a searchable list of the 111 fake patients; a small **status orb** that breathes while the
   backend is running and goes hollow if it isn't; and a dark/light switch.
-- **Thinking orbs:** while the backend works, soft spheres drift, touch and melt into each other (an
-  SVG "goo" effect: blur everything, then sharpen the edges, so overlapping circles fuse like drops of liquid).
-  Beside them a caption names the step — *Routing… Writing SQL… Checking numbers…*. Honest note: until
-  streaming exists (Plan 4) the page can't see the backend's real step, so the captions advance on a timer.
+- **Thinking orbs:** while the backend works, liquid droplets drift, touch and melt into each other (an
+  SVG "goo" effect: blur everything, then sharpen the edges, so overlapping circles fuse like drops of mercury).
+  The motion feels fluid because each droplet moves sideways and up-down on two separate rhythms that never
+  line up, so its path never visibly repeats; each one also swells and shrinks, the core breathes, a faint glow
+  pulses, and the whole cluster turns very slowly. Beside them a caption names the step — *Routing… Writing SQL…
+  Checking numbers…*. Honest note: until streaming exists (Plan 4) the page can not see the backend real step,
+  so the captions advance on a timer.
 - **Answers** rise in line by line. Under each one, a quiet line says where the facts came from and how long it
   took, then hairline buttons open: **SQL** (every query, on which database, failed tries struck through —
   you can watch the self-correction and the privacy filter that code added), **Table** (the rows), **Labels**

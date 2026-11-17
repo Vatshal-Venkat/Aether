@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, askChat, getHealth, getPatients } from "./client";
+import { ApiError, askChat, askChatStream, getHealth, getPatients } from "./client";
 
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 const status = (code: number, body: unknown = {}) =>
@@ -59,5 +59,46 @@ describe("422 is not always an unknown patient (final review)", () => {
       { status: 422, headers: { "Content-Type": "application/json" } })));
     const err = await askChat({ message: "x".repeat(1200), role: "clinician", session_id: "s" }).catch((e) => e);
     expect(err.userMessage).toMatch(/at most 1,000 characters/);
+  });
+});
+
+describe("askChatStream (live progress over Server-Sent Events)", () => {
+  const sse = (...parts: string[]) => {
+    const enc = new TextEncoder();
+    return new Response(new ReadableStream({
+      start(c) { parts.forEach((p) => c.enqueue(enc.encode(p))); c.close(); },
+    }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  };
+  const FINAL = JSON.stringify({ answer: "Done.", kind: "answer", sql: [], sources: [], table: null,
+    unverified_numbers: [], documents: [], timings: {} });
+
+  it("reports progress in order and resolves with the final result, even when events are split", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sse(
+      'event: progress\ndata: {"step": "route"}\n\nevent: prog', 'ress\ndata: {"step": "execute", "db": "billing"}\n\n',
+      `event: final\ndata: ${FINAL}\n\n`)));
+    const seen: unknown[] = [];
+    const result = await askChatStream({ message: "q", role: "clinician", session_id: "s" }, (p) => seen.push(p));
+    expect(seen).toEqual([{ step: "route" }, { step: "execute", db: "billing" }]);
+    expect(result.answer).toBe("Done.");
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/chat/stream");
+  });
+
+  it("an error event becomes an ApiError with the backend's message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sse('event: error\ndata: {"message": "The AI service is rate-limited."}\n\n')));
+    const err = await askChatStream({ message: "q", role: "clinician", session_id: "s" }, () => {}).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.userMessage).toBe("The AI service is rate-limited.");
+  });
+
+  it("a stream that ends without a result is reported", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sse('event: progress\ndata: {"step": "route"}\n\n')));
+    const err = await askChatStream({ message: "q", role: "clinician", session_id: "s" }, () => {}).catch((e) => e);
+    expect(err.userMessage).toMatch(/interrupted/);
+  });
+
+  it("HTTP errors are mapped like the normal request", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(status(422, { detail: "Unknown patient_id" })));
+    const err = await askChatStream({ message: "q", role: "patient", patient_id: "x", session_id: "s" }, () => {}).catch((e) => e);
+    expect(err.userMessage).toBe("That patient wasn't found.");
   });
 });

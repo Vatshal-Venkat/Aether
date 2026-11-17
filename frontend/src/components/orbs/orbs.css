@@ -14,37 +14,55 @@
 }
 
 .orbs--large .orbs__svg {
-  width: 220px;
-  height: 220px;
-  margin-bottom: -28px; /* the loops rarely reach the bottom of the drawing area */
+  width: 250px;
+  height: 225px;
 }
 
 .orbs--medium {
   flex-direction: row;
-  gap: 6px;
+  gap: 2px;
 }
 
 /* Centre the cluster on the answer-orb column (the column is 11 px wide). */
 .orbs--medium .orbs__svg {
-  width: 112px;
-  height: 112px;
-  margin-left: -50px;
+  width: 136px;
+  height: 122px;
+  margin-left: -62px;
 }
 
 .orbs__body circle {
   fill: currentColor;
 }
 
-/* A soft glow behind the core: the same circle, heavily blurred and faint. */
+/* A soft glow behind the liquid: a large, heavily blurred, faint circle. */
 .orbs__halo circle {
   fill: currentColor;
-  opacity: 0.16;
-  filter: blur(18px);
-  transform-origin: center;
+  opacity: 0.14;
+  filter: blur(22px);
 }
 
-.orbs:not(.orbs--active) .orbs__body {
-  opacity: 0.92;
+/* The whole cluster turns very slowly, so the merging never looks mechanical. */
+.orbs__spin {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+  animation: orb-spin 38s linear infinite;
+}
+
+.orbs--active .orbs__spin {
+  animation-duration: 18s;
+}
+
+@keyframes orb-spin {
+  to { transform: rotate(360deg); }
+}
+
+.orbs--active .orbs__halo circle {
+  animation: orb-glow 2.4s var(--ease-in-out) infinite alternate;
+}
+
+@keyframes orb-glow {
+  from { opacity: 0.1; }
+  to { opacity: 0.22; }
 }
 
 .orbs__caption {

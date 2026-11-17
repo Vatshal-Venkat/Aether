@@ -7,6 +7,7 @@ If the AI service is down or rate-limited, you get a friendly message instead of
 """
 
 import logging
+from collections.abc import Iterator
 
 from pydantic import BaseModel
 
@@ -76,14 +77,60 @@ def friendly_error(exc: Exception) -> str:
     return "Something went wrong while answering. The details are in the server log."
 
 
+def _initial_state(question: str, role: str, patient_id: str | None, session_id: str) -> dict:
+    return {"question": question, "role": role, "patient_id": patient_id, "session_id": session_id,
+            "attempts": [], "timings": {}}
+
+
 def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> ChatResult:
-    state = {"question": question, "role": role, "patient_id": patient_id, "session_id": session_id,
-             "attempts": [], "timings": {}}
     try:
-        final = build_graph(deps).invoke(state)
+        final = build_graph(deps).invoke(_initial_state(question, role, patient_id, session_id))
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         log.exception("chat pipeline failed")
         return ChatResult(kind="error", answer=friendly_error(exc))
+    return _package(final)
+
+
+# Steps worth telling the website about (bookkeeping steps like next_step are skipped).
+REPORTED_STEPS = {"route", "plan", "inject_schema", "generate_sql", "validate", "row_filter", "execute",
+                  "merge", "retrieve", "synthesize", "verify_numbers"}
+STEPS_WITH_DB = {"inject_schema", "generate_sql", "validate", "row_filter", "execute"}
+
+
+def _progress(name: str, step_input: dict) -> dict:
+    """What the website needs to know about a step that is starting: which step, on which database,
+    and — for SQL writing — whether this is a retry after a failed try."""
+    data: dict = {"step": name}
+    if name in STEPS_WITH_DB and step_input.get("db"):
+        data["db"] = step_input["db"]
+    if name == "generate_sql":
+        step = step_input.get("step", 0)
+        data["retry"] = any(a.get("step", 0) == step for a in step_input.get("attempts") or [])
+    return data
+
+
+def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> Iterator[dict]:
+    """Like run_chat, but reports each step as it starts ("progress" events), then the result ("final").
+
+    Plain English: instead of waiting in silence, the backend says "now writing SQL", "now querying
+    billing_db"... so the website can show what is happening (the thinking orbs change rhythm)."""
+    final: dict | None = None
+    try:
+        stream = build_graph(deps).stream(_initial_state(question, role, patient_id, session_id),
+                                          stream_mode=["tasks", "values"])
+        for mode, chunk in stream:
+            if mode == "values":
+                final = chunk
+            elif "input" in chunk and chunk.get("name") in REPORTED_STEPS:  # a step is starting
+                yield {"event": "progress", "data": _progress(chunk["name"], chunk["input"] or {})}
+        yield {"event": "final", "data": _package(final).model_dump()}
+    except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
+        log.exception("chat pipeline failed")
+        yield {"event": "error", "data": {"message": friendly_error(exc)}}
+
+
+def _package(final: dict) -> ChatResult:
+    """The pipeline's final notepad -> the tidy result the API returns."""
     return ChatResult(
         answer=final["answer"],
         kind=final["kind"],

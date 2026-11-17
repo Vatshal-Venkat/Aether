@@ -56,3 +56,14 @@ export interface Health {
   drug_labels: string;
   llm_provider: string;
 }
+
+/** One "a step is starting" event from POST /api/chat/stream. */
+export type Step =
+  | "route" | "plan" | "inject_schema" | "generate_sql" | "validate" | "row_filter" | "execute"
+  | "merge" | "retrieve" | "synthesize" | "verify_numbers";
+
+export interface Progress {
+  step: Step;
+  db?: "clinical" | "billing";
+  retry?: boolean;
+}

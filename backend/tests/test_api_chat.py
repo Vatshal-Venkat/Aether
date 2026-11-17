@@ -98,3 +98,33 @@ def test_chat_503_when_pipeline_unavailable():
     app = create_app(with_pipeline=False)
     resp = TestClient(app).post("/api/chat", json={"message": "hi", "role": "clinician"})
     assert resp.status_code == 503
+
+
+# --- POST /api/chat/stream: Server-Sent Events -----------------------------------------------------
+from app.api.chat import get_stream_runner  # noqa: E402
+
+
+@pytest.fixture
+def stream_client(client):
+    def fake_stream(deps, question, role, patient_id, session_id):
+        yield {"event": "progress", "data": {"step": "route"}}
+        yield {"event": "progress", "data": {"step": "execute", "db": "clinical"}}
+        yield {"event": "final", "data": ChatResult(answer="Done.", kind="answer").model_dump()}
+
+    client.app.dependency_overrides[get_stream_runner] = lambda: fake_stream
+    return client
+
+
+def test_stream_endpoint_sends_sse(stream_client):
+    resp = stream_client.post("/api/chat/stream", json={"message": "How many?", "role": "clinician"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    body = resp.text
+    assert body.index("event: progress") < body.index("event: final")
+    assert 'data: {"step": "execute", "db": "clinical"}' in body
+    assert '"answer": "Done."' in body
+
+
+def test_stream_endpoint_rejects_unknown_patient(stream_client):
+    resp = stream_client.post("/api/chat/stream", json={"message": "x", "role": "patient", "patient_id": "nope"})
+    assert resp.status_code == 422

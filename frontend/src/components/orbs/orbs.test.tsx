@@ -1,6 +1,5 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PHASES, usePhases } from "../../hooks/usePhases";
 import { AnswerOrb } from "./AnswerOrb";
 import { StatusOrb } from "./StatusOrb";
 import { ThinkingOrbs } from "./ThinkingOrbs";
@@ -20,25 +19,6 @@ describe("orbs", () => {
   it("idle orbs are decorative (no status role)", () => {
     render(<ThinkingOrbs active={false} />);
     expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it("phases advance and hold the last one", () => {
-    vi.useFakeTimers();
-    const { result } = renderHook(() => usePhases(true));
-    expect(result.current).toBe(PHASES[0]);
-    act(() => vi.advanceTimersByTime(1400));
-    expect(result.current).toBe(PHASES[1]);
-    act(() => vi.advanceTimersByTime(60_000));
-    expect(result.current).toBe(PHASES[PHASES.length - 1]);
-  });
-
-  it("phases restart when thinking starts again", () => {
-    vi.useFakeTimers();
-    const { result, rerender } = renderHook(({ on }) => usePhases(on), { initialProps: { on: true } });
-    act(() => vi.advanceTimersByTime(5000));
-    rerender({ on: false });
-    rerender({ on: true });
-    expect(result.current).toBe(PHASES[0]);
   });
 
   it("status orb: running vs down", () => {
@@ -77,27 +57,38 @@ describe("orbs", () => {
   });
 });
 
-describe("glowing spheres (owner's choice: separate shaded spheres, never merging)", () => {
-  it("draws a core and four orbiting spheres, each shaded with a radial gradient", () => {
+describe("liquid orbs (owner: the merging look was good — make the motion more fluid)", () => {
+  it("melts the orbs together with the goo filter", () => {
     const { container } = render(<ThinkingOrbs active />);
-    const spheres = container.querySelectorAll("circle.sphere");
-    expect(spheres).toHaveLength(5);
-    const gradientId = container.querySelector("radialGradient")!.id;
-    spheres.forEach((s) => expect(s.getAttribute("fill")).toBe(`url(#${gradientId})`));
+    expect(container.querySelector("feColorMatrix")).not.toBeNull();
+    expect(container.querySelector("g.orbs__body")!.getAttribute("filter")).toMatch(/^url\(#goo-/);
   });
 
-  it("does not use the merging 'goo' filter any more", () => {
+  it("has a core and five drifting droplets", () => {
     const { container } = render(<ThinkingOrbs active />);
-    expect(container.querySelector("feColorMatrix")).toBeNull();
+    expect(container.querySelectorAll("circle.droplet")).toHaveLength(5);
+    expect(container.querySelectorAll("circle.core")).toHaveLength(1);
   });
 
-  it("reduced motion still shows all five spheres, standing still", () => {
+  it("reduced motion still draws every orb, standing still", () => {
     const original = window.matchMedia;
     window.matchMedia = vi.fn().mockImplementation((q: string) => ({
       matches: q.includes("reduce"), media: q, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     })) as unknown as typeof window.matchMedia;
     const { container } = render(<ThinkingOrbs active />);
-    expect(container.querySelectorAll("circle.sphere")).toHaveLength(5);
+    expect(container.querySelectorAll("circle.droplet")).toHaveLength(5);
     window.matchMedia = original;
+  });
+});
+
+describe("rhythm follows the backend", () => {
+  it("shows the mood it was given", () => {
+    render(<ThinkingOrbs active mood="query" />);
+    expect(screen.getByTestId("thinking-orbs")).toHaveAttribute("data-mood", "query");
+  });
+
+  it("idle orbs use the idle mood", () => {
+    render(<ThinkingOrbs active={false} />);
+    expect(screen.getByTestId("thinking-orbs")).toHaveAttribute("data-mood", "idle");
   });
 });

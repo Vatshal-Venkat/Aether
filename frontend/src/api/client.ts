@@ -3,7 +3,7 @@
 // sentence a person can read ("Can't reach the Aether backend...") instead of a raw HTTP code.
 // A cancelled request (we cancel when you switch role mid-question) is passed through untouched.
 
-import type { ChatRequest, ChatResult, Health, Patient } from "./types";
+import type { ChatRequest, ChatResult, Health, Patient, Progress } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -16,6 +16,7 @@ export class ApiError extends Error {
 }
 
 const UNREACHABLE = "Can't reach the Aether backend. Is it running on port 8000?";
+const INTERRUPTED = "The connection to the backend was interrupted before the answer arrived. Please try again.";
 
 async function messageFor(response: Response): Promise<string> {
   let detail: unknown;
@@ -55,6 +56,52 @@ export function askChat(req: ChatRequest, signal?: AbortSignal): Promise<ChatRes
     body: JSON.stringify(req),
     signal,
   });
+}
+
+/** Ask a question and hear the backend's progress as it works (Server-Sent Events):
+ *  onProgress is called each time a step starts; the promise resolves with the final result. */
+export async function askChatStream(
+  req: ChatRequest,
+  onProgress: (p: Progress) => void,
+  signal?: AbortSignal,
+): Promise<ChatResult> {
+  let response: Response;
+  try {
+    response = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(req),
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, UNREACHABLE);
+  }
+  if (!response.ok) throw new ApiError(response.status, await messageFor(response));
+  if (!response.body) throw new ApiError(0, INTERRUPTED);
+
+  // An SSE stream is text: blocks separated by a blank line, each with "event: x" and "data: {...}".
+  // Network chunks can cut a block anywhere, so we buffer until a full block has arrived.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    let cut: number;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      const event = /^event: (.*)$/m.exec(block)?.[1]?.trim();
+      const data = /^data: (.*)$/m.exec(block)?.[1];
+      if (!event || data === undefined) continue;
+      const payload = JSON.parse(data);
+      if (event === "progress") onProgress(payload as Progress);
+      else if (event === "final") return payload as ChatResult;
+      else if (event === "error") throw new ApiError(500, String(payload.message ?? "Something went wrong."));
+    }
+    if (done) throw new ApiError(0, INTERRUPTED);
+  }
 }
 
 export function getPatients(): Promise<Patient[]> {

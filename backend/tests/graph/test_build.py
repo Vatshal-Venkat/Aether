@@ -181,3 +181,35 @@ def test_invalid_plan_gives_error_kind(two_dbs):
 def test_out_of_scope_mentions_billing_topics(engine):
     result = _run(ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "weather"}'), engine)
     assert result.kind == "out_of_scope" and "insurers" in result.answer and "doctors" in result.answer
+
+
+# --- live progress for the website (SSE) ---------------------------------------------------------
+from app.graph.runner import stream_chat  # noqa: E402
+
+
+def test_stream_emits_progress_then_final(engine):
+    llm = ScriptedLLM(ROUTE_SQL, "SELECT count(*) AS n FROM patients", "There are 111 patients.")
+    events = list(stream_chat(make_deps(llm, engines={"clinical": engine}), "How many patients?", "clinician", None, "s"))
+    progress = [e["data"] for e in events if e["event"] == "progress"]
+    steps = [p["step"] for p in progress]
+    assert steps[0] == "route"
+    assert steps.index("generate_sql") < steps.index("execute") < steps.index("synthesize")
+    assert next(p for p in progress if p["step"] == "execute")["db"] == "clinical"
+    assert "next_step" not in steps  # internal bookkeeping steps are not reported
+    final = events[-1]
+    assert final["event"] == "final" and final["data"]["answer"] == "There are 111 patients."
+    assert final["data"]["sql"][0]["query"] == "SELECT count(*) AS n FROM patients"
+
+
+def test_stream_marks_a_retry(engine):
+    llm = ScriptedLLM(ROUTE_SQL, "SELECT cnt FROM patients", "SELECT count(*) AS n FROM patients", "There are 111 patients.")
+    events = list(stream_chat(make_deps(llm, engines={"clinical": engine}), "How many?", "clinician", None, "s"))
+    writes = [e["data"] for e in events if e["event"] == "progress" and e["data"]["step"] == "generate_sql"]
+    assert [w["retry"] for w in writes] == [False, True]
+
+
+def test_stream_turns_a_crash_into_an_error_event(engine):
+    import httpx
+    events = list(stream_chat(make_deps(ScriptedLLM(httpx.ConnectError("down")), engines={"clinical": engine}),
+                              "Hi", "clinician", None, "s"))
+    assert events[-1]["event"] == "error" and "rate-limited" in events[-1]["data"]["message"]

@@ -7,10 +7,11 @@ import type { ChatResult } from "./api/types";
 
 vi.mock("./api/client", async (importOriginal) => {
   const real = await importOriginal<typeof import("./api/client")>();
-  return { ...real, askChat: vi.fn(), getPatients: vi.fn(), getHealth: vi.fn() };
+  return { ...real, askChat: vi.fn(), askChatStream: vi.fn(), getPatients: vi.fn(), getHealth: vi.fn() };
 });
 
-const askChat = vi.mocked(client.askChat);
+// The page uses the streaming call; its first argument is the same request as before.
+const askChat = vi.mocked(client.askChatStream);
 const getPatients = vi.mocked(client.getPatients);
 const getHealth = vi.mocked(client.getHealth);
 
@@ -172,5 +173,35 @@ describe("final review fixes", () => {
     expect(spy.mock.calls.every(([opts]) => (opts as ScrollIntoViewOptions)?.behavior === "auto")).toBe(true);
     window.matchMedia = original;
     spy.mockRestore();
+  });
+});
+
+
+describe("live progress drives the thinking orbs", () => {
+  it("the caption and the orbs' rhythm follow what the backend reports", async () => {
+    let report: (p: import("./api/types").Progress) => void = () => {};
+    askChat.mockImplementation((_req, onProgress) => {
+      report = onProgress;
+      return new Promise(() => {});
+    });
+    render(<App />);
+    await ask("Which insurer has the most customers?");
+    expect(await screen.findByText(/Starting/)).toBeInTheDocument();
+    await act(async () => report({ step: "generate_sql", db: "billing", retry: false }));
+    expect(screen.getByText(/Writing SQL/)).toBeInTheDocument();
+    expect(screen.getByTestId("thinking-orbs")).toHaveAttribute("data-mood", "write");
+    await act(async () => report({ step: "execute", db: "billing" }));
+    expect(screen.getByText(/Querying billing_db/)).toBeInTheDocument();
+    expect(screen.getByTestId("thinking-orbs")).toHaveAttribute("data-mood", "query");
+  });
+
+  it("progress from an abandoned question is ignored", async () => {
+    let report: (p: import("./api/types").Progress) => void = () => {};
+    askChat.mockImplementationOnce((_req, onProgress) => { report = onProgress; return new Promise(() => {}); });
+    render(<App />);
+    await ask("Slow one");
+    await userEvent.click(screen.getByRole("button", { name: "Patient" }));
+    await act(async () => report({ step: "execute", db: "clinical" }));
+    expect(screen.queryByText(/Querying clinical_db/)).toBeNull();
   });
 });
