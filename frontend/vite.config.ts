@@ -7,10 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
-import { backendPort, backendTarget } from "./backendTarget";
+import { backendPort, backendTarget } from "./backendTarget.ts";
 
 export default defineConfig(({ mode }) => {
-  const env = { ...loadEnv(mode, join(__dirname, "..", "backend"), "AETHER_"), ...process.env };
+  const env = { ...loadEnv(mode, join(import.meta.dirname, "..", "backend"), "AETHER_"), ...process.env };
   const backend = backendTarget(env);
   return {
     plugins: [react()],
