@@ -13,7 +13,7 @@ from tests.fakes import ScriptedLLM, make_deps
 
 
 @pytest.fixture
-def client():
+def client(tmp_path):
     # One shared connection: the endpoint reads from a worker thread, and an in-memory
     # SQLite database only exists on the connection that created it.
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
@@ -31,6 +31,11 @@ def client():
     app = create_app(with_pipeline=False)
     app.dependency_overrides[get_deps] = lambda: deps
     app.dependency_overrides[get_runner] = lambda: fake_runner
+    # Plan 5: the service layer's audit log etc. go to a temporary folder, never the real data/ files.
+    from app.api.ops_routes import get_ops
+    from app.ops import Ops
+    ops = Ops.for_tests(tmp_path)
+    app.dependency_overrides[get_ops] = lambda: ops
     c = TestClient(app)
     c.calls = calls
     return c
@@ -145,3 +150,50 @@ def test_session_history_is_scoped_to_role_and_patient(client, tmp_path):
     assert client.get("/api/sessions/abc", params={"role": "patient", "patient_id": "p1"}).json() == []
     assert client.get("/api/sessions/abc").status_code == 422  # role is required
     assert "patient_id" not in clin[0]
+
+
+# --- /metrics and /api/audit ------------------------------------------------------------------------
+def test_metrics_endpoint(client):
+    resp = client.get("/metrics")
+    assert resp.status_code == 200 and "aether_requests_total" in resp.text
+
+
+def test_audit_api_disabled_by_default(client):
+    assert client.get("/api/audit").status_code == 404
+
+
+def test_audit_api_when_enabled(client):
+    from app.api.ops_routes import get_ops
+    ops = client.app.dependency_overrides[get_ops]()
+    ops.audit_api_enabled = True
+    client.post("/api/chat", json={"message": "How many patients?", "role": "clinician"})
+    rows = client.get("/api/audit", params={"limit": 5}).json()
+    assert rows and rows[0]["question"] == "How many patients?" and rows[0]["kind"] == "answer"
+
+
+# --- Plan 5: rate limit and result pages ------------------------------------------------------------
+def test_rate_limit_429(client):
+    from app.api.ops_routes import get_ops
+    from app.ops.ratelimit import SlidingWindow
+    client.app.dependency_overrides[get_ops]().limiter = SlidingWindow(limit=2, window=60)
+    for _ in range(2):
+        assert client.post("/api/chat", json={"message": "Hi", "role": "clinician"}).status_code == 200
+    resp = client.post("/api/chat", json={"message": "Hi", "role": "clinician"})
+    assert resp.status_code == 429 and "Too many questions" in resp.json()["detail"]
+    assert float(resp.headers["Retry-After"]) > 0
+    assert client.post("/api/chat/stream", json={"message": "Hi", "role": "clinician"}).status_code == 429
+
+
+def test_result_pages_scoped(client):
+    from app.api.chat import get_runner
+    from app.graph.state import QueryResult
+    big = ChatResult(answer="250 rows.", kind="answer",
+                     table=QueryResult(columns=["n"], rows=[[i] for i in range(250)], total_rows=250, truncated=False))
+    client.app.dependency_overrides[get_runner] = lambda: (lambda *a: big)
+    body = client.post("/api/chat", json={"message": "List", "role": "clinician"}).json()
+    rid = body["table"]["result_id"]
+    assert len(body["table"]["rows"]) == 100
+    page = client.get(f"/api/results/{rid}", params={"page": 3, "role": "clinician"}).json()
+    assert page["rows"][0] == [200] and len(page["rows"]) == 50 and page["pages"] == 3
+    assert client.get(f"/api/results/{rid}", params={"page": 2, "role": "patient", "patient_id": "p1"}).status_code == 404
+    assert client.get(f"/api/results/{rid}", params={"page": 9, "role": "clinician"}).status_code == 422

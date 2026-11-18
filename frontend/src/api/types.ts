@@ -16,6 +16,15 @@ export interface QueryResult {
   rows: unknown[][];
   total_rows: number;
   truncated: boolean;
+  result_id?: string | null; // ticket for fetching more pages of a big table
+}
+
+export interface ResultPage {
+  columns: string[];
+  rows: unknown[][];
+  page: number;
+  pages: number;
+  total_rows: number;
 }
 
 export interface DocumentRef {
@@ -36,6 +45,7 @@ export interface ChatResult {
   route?: string | null;
   standalone_question?: string | null; // a follow-up rewritten as a full question
   options?: string[];                  // a clarifying question's one-click answers
+  cached?: boolean;                    // answered instantly from the answer cache
 }
 
 export interface ChatRequest {

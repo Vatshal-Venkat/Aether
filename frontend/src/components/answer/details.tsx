@@ -5,10 +5,13 @@
 //  * LabelList: the FDA label passages the answer was based on, with a link to the official label.
 //  * Timeline: how long each step took, as hairline bars.
 
-import type { DocumentRef, QueryResult, SqlRecord } from "../../api/types";
+import { useState } from "react";
+import { ApiError, getResultPage } from "../../api/client";
+import type { DocumentRef, QueryResult, Role, SqlRecord } from "../../api/types";
 
 const DB_LABEL = { clinical: "clinical_db", billing: "billing_db" } as const;
 const MAX_ROWS = 200;
+const PAGE = 100; // rows per page from the server
 
 export function SqlList({ sql }: { sql: SqlRecord[] }) {
   return (
@@ -35,14 +38,40 @@ function cell(value: unknown): string {
   return String(value);
 }
 
-export function ResultTable({ table }: { table: QueryResult }) {
-  const shown = table.rows.slice(0, MAX_ROWS);
+export interface Owner {
+  role: Role;
+  patientId: string | null;
+}
+
+/** The result rows. A big table arrives 100 rows at a time with a ticket (result_id): "Load more" fetches
+ *  the next page — only for the person who asked. Tables without a ticket draw at most 200 rows. */
+export function ResultTable({ table, owner }: { table: QueryResult; owner?: Owner }) {
+  const [rows, setRows] = useState<unknown[][]>(table.rows);
+  const [loading, setLoading] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const paged = Boolean(table.result_id && owner);
+  const shown = paged ? rows : rows.slice(0, MAX_ROWS);
+  const canLoadMore = paged && rows.length < table.total_rows;
+
+  const loadMore = async () => {
+    setLoading(true);
+    setProblem(null);
+    try {
+      const page = await getResultPage(table.result_id!, Math.floor(rows.length / PAGE) + 1, owner!.role, owner!.patientId);
+      setRows((r) => [...r, ...page.rows]);
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.userMessage : "Couldn't load more rows.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="result">
       <div className="result__meta">
-        {table.total_rows > MAX_ROWS && (
+        {table.total_rows > shown.length && (
           <span>
-            Showing {MAX_ROWS} of {table.total_rows.toLocaleString("en-US")}
+            Showing {shown.length.toLocaleString("en-US")} of {table.total_rows.toLocaleString("en-US")}
           </span>
         )}
         {table.truncated && <span className="badge">partial — more rows exist</span>}
@@ -67,6 +96,12 @@ export function ResultTable({ table }: { table: QueryResult }) {
           </tbody>
         </table>
       </div>
+      {canLoadMore && (
+        <button type="button" className="chip result__more" onClick={loadMore} disabled={loading}>
+          {loading ? "Loading…" : `Load more (${Math.min(PAGE, table.total_rows - rows.length)} rows)`}
+        </button>
+      )}
+      {problem && <p className="result__problem">{problem}</p>}
     </div>
   );
 }

@@ -38,6 +38,7 @@ class QueryResult(BaseModel):
     rows: list[list[Any]]  # JSON-safe values only
     total_rows: int
     truncated: bool
+    result_id: str | None = None  # ticket for fetching further pages (GET /api/results/{id})
 
 
 class PlanStep(BaseModel):

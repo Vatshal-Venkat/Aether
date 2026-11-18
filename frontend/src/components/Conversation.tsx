@@ -6,6 +6,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import type { Progress, Role } from "../api/types";
+import type { Owner } from "./answer/details";
 import type { Message } from "../hooks/useChat";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { AnswerCard } from "./answer/AnswerCard";
@@ -19,6 +20,7 @@ interface Props {
   pending: boolean;
   progress: Progress | null;
   role: Role;
+  owner: Owner; // who is asking — big tables can only be paged by them
   locked: boolean;
   onExample: (q: string) => void;
 }
@@ -30,7 +32,7 @@ const rise = {
   transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
 };
 
-export function Conversation({ messages, pending, progress, role, locked, onExample }: Props) {
+export function Conversation({ messages, pending, progress, role, owner, locked, onExample }: Props) {
   const reduced = useReducedMotion();
   const end = useRef<HTMLDivElement>(null);
 
@@ -52,7 +54,7 @@ export function Conversation({ messages, pending, progress, role, locked, onExam
               </div>
             )}
             {m.type === "assistant" && m.result && (
-              <AnswerCard result={m.result} onOption={pending ? undefined : onExample} />
+              <AnswerCard result={m.result} onOption={pending ? undefined : onExample} owner={owner} />
             )}
             {m.type === "error" && (
               <article className="answer" data-kind="error">

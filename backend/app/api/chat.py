@@ -15,9 +15,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import database_errors_as_503, get_deps
+from app.api.ops_routes import get_ops, rate_limit
 from app.db.patients import patient_exists
 from app.graph.deps import Deps
 from app.graph.runner import ChatResult, run_chat, stream_chat
+from app.ops import Ops
+from app.service import ChatService
 
 router = APIRouter(prefix="/api")
 
@@ -51,22 +54,27 @@ async def _check_patient(req: ChatRequest, deps: Deps) -> None:
             raise HTTPException(status_code=422, detail="Unknown patient_id")
 
 
-@router.post("/chat", response_model=ChatResult)
-async def chat(req: ChatRequest, deps: Deps = Depends(get_deps), runner=Depends(get_runner)) -> ChatResult:
+@router.post("/chat", response_model=ChatResult, dependencies=[Depends(rate_limit)])
+async def chat(req: ChatRequest, deps: Deps = Depends(get_deps), runner=Depends(get_runner),
+               ops: Ops = Depends(get_ops)) -> ChatResult:
     await _check_patient(req, deps)
+    service = ChatService(deps, ops)  # cache, AI queue, result pages, audit, metrics (Plan 5)
     # The pipeline is synchronous (DB drivers + AI calls); run it off the event loop.
-    return await run_in_threadpool(runner, deps, req.message, req.role, req.patient_id, req.session_id)
+    return await run_in_threadpool(service.answer, req.message, req.role, req.patient_id, req.session_id, runner)
 
 
-@router.post("/chat/stream")
-async def chat_stream(req: ChatRequest, deps: Deps = Depends(get_deps), runner=Depends(get_stream_runner)):
+@router.post("/chat/stream", dependencies=[Depends(rate_limit)])
+async def chat_stream(req: ChatRequest, deps: Deps = Depends(get_deps), runner=Depends(get_stream_runner),
+                      ops: Ops = Depends(get_ops)):
     """Same question, answered as Server-Sent Events: one "progress" event as each step starts
     (route, generate_sql, execute on clinical_db...), then "final" with the full result, or "error".
     The website uses the progress events to change the rhythm of the thinking orbs."""
     await _check_patient(req, deps)
 
+    service = ChatService(deps, ops)
+
     def events():
-        for e in runner(deps, req.message, req.role, req.patient_id, req.session_id):
+        for e in service.stream(req.message, req.role, req.patient_id, req.session_id, runner):
             yield f"event: {e['event']}\ndata: {json.dumps(e['data'])}\n\n"
 
     # A plain (sync) generator: Starlette runs it in a worker thread, so the slow pipeline

@@ -165,3 +165,24 @@ it("reduced motion shows the answer at once (no word-by-word reveal)", () => {
   expect(container.querySelector(".answer__text")).toHaveTextContent("There are 8 patients with diabetes.");
   window.matchMedia = original;
 });
+
+describe("Plan 5: pages and cache", () => {
+  it("'Load more' fetches the next page of a big table", async () => {
+    const client = await import("../../api/client");
+    const spy = vi.spyOn(client, "getResultPage").mockResolvedValue({ columns: ["n"], rows: Array.from({ length: 100 }, (_, i) => [100 + i]),
+      page: 2, pages: 3, total_rows: 250 });
+    const table = { columns: ["n"], rows: Array.from({ length: 100 }, (_, i) => [i]), total_rows: 250, truncated: false, result_id: "abc" };
+    render(<AnswerCard result={{ ...base, table }} owner={{ role: "clinician", patientId: null }} />);
+    await userEvent.click(screen.getByRole("button", { name: /Table/ }));
+    expect(screen.getByText(/100 of 250/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Load more/ }));
+    expect(spy).toHaveBeenCalledWith("abc", 2, "clinician", null);
+    expect(await screen.findByText(/200 of 250/)).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it("a cached answer says so", () => {
+    render(<AnswerCard result={{ ...base, cached: true }} />);
+    expect(screen.getByText("from cache")).toBeInTheDocument();
+  });
+});

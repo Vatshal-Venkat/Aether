@@ -9,7 +9,7 @@ import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { renderMarkdown } from "../../lib/markdown";
 import { AnswerOrb } from "../orbs/AnswerOrb";
 import { Disclosures, type Panel } from "./Disclosure";
-import { LabelList, ResultTable, SqlList, Timeline } from "./details";
+import { LabelList, type Owner, ResultTable, SqlList, Timeline } from "./details";
 import "./answer.css";
 
 const KIND_LABEL = { answer: "", clarification: "A quick question", refusal: "Not allowed", out_of_scope: "Out of scope", error: "Couldn't answer" };
@@ -32,7 +32,7 @@ export function cleanAnswer(text: string, hasSources: boolean): string {
   return out;
 }
 
-export function AnswerCard({ result, onOption }: { result: ChatResult; onOption?: (option: string) => void }) {
+export function AnswerCard({ result, onOption, owner }: { result: ChatResult; onOption?: (option: string) => void; owner?: Owner }) {
   const reduced = useReducedMotion();
   const total = Object.values(result.timings).reduce((a, b) => a + b, 0);
   const tables = result.sources.filter((s) => !s.startsWith("openFDA label:"));
@@ -43,7 +43,7 @@ export function AnswerCard({ result, onOption }: { result: ChatResult; onOption?
   if (result.table) {
     const n = result.table.total_rows;
     panels.push({ id: "table", title: "Table", count: `${n.toLocaleString("en-US")} row${n === 1 ? "" : "s"}`,
-      content: <ResultTable table={result.table} /> });
+      content: <ResultTable table={result.table} owner={owner} /> });
   }
   if (result.documents.length) {
     panels.push({ id: "labels", title: "Labels", count: String(result.documents.length), content: <LabelList documents={result.documents} /> });
@@ -95,7 +95,13 @@ export function AnswerCard({ result, onOption }: { result: ChatResult; onOption?
                 <span>{s}</span>
               </span>
             ))}
-            {total > 0 && (
+            {result.cached && (
+              <>
+                {meta.length > 0 && <span className="answer__sep"> · </span>}
+                <span>from cache</span>
+              </>
+            )}
+            {total > 0 && !result.cached && ( // a cached answer's timings belong to the original run
               <>
                 {meta.length > 0 && <span className="answer__sep"> · </span>}
                 <span>{`${total.toFixed(1)} s`}</span>

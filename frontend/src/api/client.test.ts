@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, askChat, askChatStream, getHealth, getPatients } from "./client";
+import { ApiError, askChat, askChatStream, getHealth, getPatients, getResultPage } from "./client";
 
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 const status = (code: number, body: unknown = {}) =>
@@ -100,5 +100,36 @@ describe("askChatStream (live progress over Server-Sent Events)", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(status(422, { detail: "Unknown patient_id" })));
     const err = await askChatStream({ message: "q", role: "patient", patient_id: "x", session_id: "s" }, () => {}).catch((e) => e);
     expect(err.userMessage).toBe("That patient wasn't found.");
+  });
+});
+
+describe("Plan 5", () => {
+  it("a rate limit (429) gets a friendly message", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(status(429, { detail: "Too many questions at once — please wait a moment." })));
+    const err = await askChat({ message: "q", role: "clinician", session_id: "s" }).catch((e) => e);
+    expect(err.status).toBe(429);
+    expect(err.userMessage).toBe("Too many questions at once — please wait a moment.");
+  });
+
+  it("fetches a page of a big table for the same person", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({ columns: ["n"], rows: [[100]], page: 2, pages: 3, total_rows: 250 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const page = await getResultPage("abc", 2, "patient", "p1");
+    expect(page.rows).toEqual([[100]]);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/results/abc?page=2&role=patient&patient_id=p1");
+  });
+});
+
+describe("result pages: the backend's own explanation is shown (final review)", () => {
+  it("404: expired or not yours", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(status(404, { detail: "This table has expired or isn't yours — ask the question again." })));
+    const err = await getResultPage("abc", 2, "clinician", null).catch((e) => e);
+    expect(err.userMessage).toBe("This table has expired or isn't yours — ask the question again.");
+  });
+
+  it("422 with a plain explanation (page out of range) is shown as is", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(status(422, { detail: "page must be between 1 and 3" })));
+    const err = await getResultPage("abc", 9, "clinician", null).catch((e) => e);
+    expect(err.userMessage).toBe("page must be between 1 and 3");
   });
 });

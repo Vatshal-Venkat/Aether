@@ -21,5 +21,7 @@ pyyaml>=6.0
 httpx>=0.28
 # Drug-label search (local vector store + local embedding model)
 chromadb>=1.5,<2
+# Live counters for /metrics (Prometheus text format)
+prometheus-client>=0.26,<1
 # Tests
 pytest>=9.2

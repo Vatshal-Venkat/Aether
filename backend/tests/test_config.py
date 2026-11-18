@@ -51,3 +51,9 @@ def test_rls_key_derived_when_unset():
 
 def test_rls_key_explicit():
     assert Settings(_env_file=None, pg_admin_password="pg", rls_secret="k").rls_key() == "k"
+
+
+def test_api_port_default_and_override(monkeypatch):
+    assert Settings(_env_file=None).api_port == 8000
+    monkeypatch.setenv("AETHER_API_PORT", "8001")
+    assert Settings(_env_file=None).api_port == 8001

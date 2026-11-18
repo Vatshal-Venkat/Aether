@@ -32,7 +32,8 @@ export default function App() {
       />
       <main className="app__main">
         <div className="column">
-          <Conversation messages={chat.messages} pending={chat.pending} progress={chat.progress} role={chat.role} locked={locked} onExample={chat.send} />
+          <Conversation messages={chat.messages} pending={chat.pending} progress={chat.progress} role={chat.role}
+            owner={{ role: chat.role, patientId: chat.patient?.id ?? null }} locked={locked} onExample={chat.send} />
         </div>
       </main>
       <footer className="app__footer">

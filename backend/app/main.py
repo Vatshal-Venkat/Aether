@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import catalog_routes, chat, health
+from app.api import catalog_routes, chat, health, ops_routes
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
     app.include_router(health.router)
     app.include_router(chat.router)
     app.include_router(catalog_routes.router)
+    app.include_router(ops_routes.router)
     return app
 
 

@@ -3,7 +3,7 @@
 // sentence a person can read ("Can't reach the Aether backend...") instead of a raw HTTP code.
 // A cancelled request (we cancel when you switch role mid-question) is passed through untouched.
 
-import type { ChatRequest, ChatResult, Health, Patient, Progress } from "./types";
+import type { ChatRequest, ChatResult, Health, Patient, Progress, ResultPage, Role } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -15,7 +15,7 @@ export class ApiError extends Error {
   }
 }
 
-const UNREACHABLE = "Can't reach the Aether backend. Is it running on port 8000?";
+const UNREACHABLE = `Can't reach the Aether backend. Is it running on port ${__AETHER_API_PORT__}?`;
 const INTERRUPTED = "The connection to the backend was interrupted before the answer arrived. Please try again.";
 
 async function messageFor(response: Response): Promise<string> {
@@ -26,10 +26,17 @@ async function messageFor(response: Response): Promise<string> {
     detail = undefined;
   }
   if (response.status === 422) {
-    // 422 also comes from input checks (e.g. a question over 1,000 characters), not only unknown patients.
-    return detail === "Unknown patient_id"
-      ? "That patient wasn't found."
-      : "That question couldn't be sent — questions can be at most 1,000 characters.";
+    // 422 means "the request was refused as given": an unknown patient, a question over 1,000 characters
+    // (FastAPI's checks send a list), or a plain explanation such as "page must be between 1 and 3".
+    if (detail === "Unknown patient_id") return "That patient wasn't found.";
+    if (typeof detail === "string") return detail;
+    return "That question couldn't be sent — questions can be at most 1,000 characters.";
+  }
+  if (response.status === 404 && typeof detail === "string") {
+    return detail; // e.g. "This table has expired or isn't yours — ask the question again."
+  }
+  if (response.status === 429) {
+    return typeof detail === "string" ? detail : "Too many questions at once — please wait a moment.";
   }
   if (response.status === 503) {
     return typeof detail === "string" ? detail : "The database is unavailable right now.";
@@ -102,6 +109,13 @@ export async function askChatStream(
     }
     if (done) throw new ApiError(0, INTERRUPTED);
   }
+}
+
+/** The next 100 rows of a big table; only works for the person who asked (same role and patient). */
+export function getResultPage(resultId: string, page: number, role: Role, patientId: string | null): Promise<ResultPage> {
+  const params = new URLSearchParams({ page: String(page), role });
+  if (role === "patient" && patientId) params.set("patient_id", patientId);
+  return request<ResultPage>(`/api/results/${encodeURIComponent(resultId)}?${params}`);
 }
 
 export function getPatients(): Promise<Patient[]> {

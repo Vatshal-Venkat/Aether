@@ -47,6 +47,7 @@ class ChatResult(BaseModel):
     route: str | None = None   # what the router decided: sql / rag / hybrid / clarify / refuse / out_of_scope
     standalone_question: str | None = None  # a follow-up, rewritten as a full question ("Understood as: ...")
     options: list[str] = []    # a clarifying question's suggested answers (one click each on the website)
+    cached: bool = False       # answered instantly from the answer cache (Plan 5)
     sql: list[SqlRecord] = []
     sources: list[str] = []
     table: QueryResult | None = None

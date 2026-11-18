@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -31,6 +32,10 @@ class Settings(BaseSettings):
     mysql_port: int = 3306
     mysql_admin_user: str = "root"
     mysql_admin_password: str = ""
+
+    # Port the backend listens on (python -m scripts.serve). The website reads the same AETHER_API_PORT
+    # line from this .env file, so changing it here moves both. Default 8000.
+    api_port: int = Field(8000, validation_alias=AliasChoices("AETHER_API_PORT", "API_PORT"), ge=1, le=65535)
 
     # Password of the read-only "chatbot_ro" account the chatbot uses in BOTH databases
     ro_password: str = ""
@@ -59,6 +64,17 @@ class Settings(BaseSettings):
     # Conversation memory: where turns are kept and how many recent ones a follow-up may use
     memory_path: Path = BACKEND_DIR / "data" / "memory.sqlite"
     memory_turns: int = 3
+
+    # Service habits (Plan 5): audit log, answer cache, result pages, rate limit, AI queue
+    audit_path: Path = BACKEND_DIR / "data" / "audit.sqlite"
+    enable_audit_api: bool = False   # GET /api/audit shows every patient's questions: off unless you turn it on
+    cache_size: int = 256            # answers remembered
+    cache_ttl_s: int = 600           # ...for 10 minutes
+    results_ttl_s: int = 1800        # big tables can be paged for 30 minutes
+    page_size: int = 100             # rows per page
+    rate_limit: int = 20             # questions per address...
+    rate_window_s: int = 60          # ...per minute
+    max_concurrent_chats: int = 2    # questions worked on at once (the free AI tier is the bottleneck)
 
     # Drug-label library (RAG): where it is stored and how many passages to look up
     chroma_dir: Path = BACKEND_DIR / "chroma"

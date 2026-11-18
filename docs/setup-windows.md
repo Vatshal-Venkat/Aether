@@ -80,7 +80,7 @@ Two terminals:
 
 ```bash
 # terminal 1 — the backend (from backend/, venv active)
-uvicorn app.main:app --port 8000
+python -m scripts.serve          # same as: uvicorn app.main:app --reload --port <AETHER_API_PORT>
 
 # terminal 2 — the website (from frontend/)
 npm install        # first time only
@@ -88,7 +88,12 @@ npm run dev
 ```
 
 Open **http://localhost:5173**. The small dot top-right breathes while the backend is running and goes
-hollow if it isn't. Run the website's own tests with `npm test`.
+hollow if it isn't.
+
+**Port already in use?** (e.g. another app on 8000, or `WinError 10013`) Add one line to `backend/.env`:
+`AETHER_API_PORT=8001`. Both `python -m scripts.serve` and the website (`npm run dev`) read it, so they move
+together — restart both after changing it. For a one-off: `python -m scripts.serve --port 8002` (then start the website
+with the same `AETHER_API_PORT` in your environment). Run the website's own tests with `npm test`.
 
 ## 9. Measure accuracy (the accuracy report)
 *Why:* asks Aether ~46 fixed questions and checks every answer against the true value computed
@@ -104,6 +109,13 @@ python -m scripts.run_eval --category rag      # one category
 
 The report is saved in `docs/eval/` (a readable `.md` and a detailed `.json`). The questions live in
 `backend/app/eval/questions.yaml` — add your own there.
+
+## 10. Service extras (optional)
+- **Live counters:** open http://localhost:8000/metrics while the backend runs.
+- **Audit logbook:** add `ENABLE_AUDIT_API=true` to `backend/.env`, restart the backend, then open
+  http://localhost:8000/api/audit?limit=20. Leave it off otherwise (no login: it shows every patient's questions).
+- Limits (questions per minute, cache time, rows per page) are in `backend/app/config.py` and can be overridden in
+  `backend/.env` (e.g. `RATE_LIMIT=40`).
 
 ## Optional: look at the data yourself
 **DBeaver Community** (https://dbeaver.io) opens both databases side by side. pgAdmin

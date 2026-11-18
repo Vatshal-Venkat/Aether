@@ -323,6 +323,27 @@ another patient (or the doctor view) finds nothing. Switching role on the websit
 And a follow-up that turns into a question about someone else ("and what about Bob?") goes through the same privacy
 checks as any question — it is refused.
 
+### Step 23 — Behaving like a real service (Plan 5) ✅
+A layer now sits around the pipeline (`backend/app/service.py`), the way a real product would run it:
+
+- **Answer cache.** Ask exactly the same *first* question again within 10 minutes, as the same person (same role and
+  patient), and the answer comes back instantly from memory — measured **0.045 s** instead of several seconds, and no AI
+  allowance spent. Follow-ups are never cached (their meaning depends on the conversation), nor are errors or refusals.
+  Cached answers say **"from cache"** on the website.
+- **Big tables in pages.** "List all encounters" returns 1,000 rows. The answer now carries the first 100 and a ticket;
+  **Load more** fetches the next 100. A ticket works only for whoever asked — the same ticket used as a patient gets
+  "not found" — and expires after 30 minutes.
+- **No floods.** Each address may ask 20 questions a minute; beyond that, a friendly "please wait a moment" (HTTP 429).
+  And at most 2 questions use the AI at the same time — the others wait their turn — because the free AI tier is the
+  bottleneck.
+- **A logbook (audit).** Every question is recorded: when, who (role/patient), the question and how it was understood,
+  the route, every SQL query with its database and any error, rows returned, cached or not, success, time taken
+  (`backend/data/audit.sqlite`). The page that *reads* it (`/api/audit`) is **off** unless you set
+  `ENABLE_AUDIT_API=true`, because with no login it would show every patient's questions to anyone.
+- **Live counters** at `/metrics` (the standard Prometheus format, free): questions by kind, cache hits and misses,
+  time per question and per step, failed SQL tries, refused floods, questions in progress. Tools like Grafana can graph
+  them; you can also just open the page.
+
 ## 5. What happens when you ask a question
 
 ```
