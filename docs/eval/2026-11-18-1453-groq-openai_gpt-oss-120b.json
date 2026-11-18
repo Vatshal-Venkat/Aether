@@ -1,0 +1,65 @@
+{
+ "meta": {
+  "model": "groq / openai/gpt-oss-120b",
+  "started": "2026-11-18 14:53"
+ },
+ "scores": [
+  {
+   "id": "HY03",
+   "category": "hybrid",
+   "question": "What is my metformin used for?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 34.19,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "Your records show that your Metformin hydrochloride 500 MG Extended Release Oral Tablet is used for Diabetes mellitus type 2 (disorder).\n\nAccording to the drug label, Metformin hydrochloride extended-release tablets are indicated as an adjunct to diet and exercise to improve glycemic control in adults and pediatric patients 10 years of age and older with type 2 diabetes mellitus.\n\nSource: clinical_db.medications, openFDA label: Metformin Er 500 Mg \u2014 Uses",
+   "timings": {
+    "route": 10.8312,
+    "plan": 0.0001,
+    "inject_schema": 0.0024,
+    "generate_sql": 10.9339,
+    "validate": 0.0361,
+    "row_filter": 0.0,
+    "execute": 0.0105,
+    "next_step": 0.0001,
+    "merge": 0.0002,
+    "retrieve": 1.3257,
+    "synthesize": 11.0404,
+    "verify_numbers": 0.0085
+   }
+  },
+  {
+   "id": "PT01",
+   "category": "patient",
+   "question": "When was my last visit?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 20.97,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "(privacy question: not stored)",
+   "timings": {
+    "route": 9.9462,
+    "plan": 0.0,
+    "inject_schema": 0.0017,
+    "generate_sql": 10.4438,
+    "validate": 0.0022,
+    "row_filter": 0.0,
+    "execute": 0.0063,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.5693,
+    "verify_numbers": 0.0001
+   }
+  }
+ ]
+}

@@ -79,7 +79,17 @@ def test_llm_failure_returns_error_kind(engine):
 
     result = _run(ScriptedLLM(httpx.ConnectError("connection refused")), engine)
     assert result.kind == "error"
-    assert "rate-limited" in result.answer
+    # A connection problem is "unavailable" — only a real rate limit may say "rate-limited"
+    # (the accuracy report treats rate-limited questions as "not run").
+    assert "unavailable" in result.answer and "rate-limited" not in result.answer
+
+
+def test_rate_limit_is_named_as_such(engine):
+    class RateLimitError(Exception):
+        status_code = 429
+
+    result = _run(ScriptedLLM(RateLimitError("Rate limit reached: tokens per day")), engine)
+    assert result.kind == "error" and "rate-limited" in result.answer
 
 
 def test_unusable_ai_reply_gets_its_own_message(engine):
@@ -212,4 +222,10 @@ def test_stream_turns_a_crash_into_an_error_event(engine):
     import httpx
     events = list(stream_chat(make_deps(ScriptedLLM(httpx.ConnectError("down")), engines={"clinical": engine}),
                               "Hi", "clinician", None, "s"))
-    assert events[-1]["event"] == "error" and "rate-limited" in events[-1]["data"]["message"]
+    assert events[-1]["event"] == "error" and "unavailable" in events[-1]["data"]["message"]
+
+
+def test_result_records_the_route(engine):
+    llm = ScriptedLLM(ROUTE_SQL, "SELECT count(*) AS n FROM patients", "There are 111 patients.")
+    assert _run(llm, engine).route == "sql"
+    assert _run(ScriptedLLM('{"kind": "refuse", "databases": [], "reason": "x"}'), engine, "patient", "p1").route == "refuse"

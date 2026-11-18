@@ -1,0 +1,181 @@
+{
+ "meta": {
+  "model": "groq / openai/gpt-oss-120b",
+  "started": "2026-11-18 14:44"
+ },
+ "scores": [
+  {
+   "id": "CL10",
+   "category": "clinical",
+   "question": "Which diagnosis (disorder) affects the most patients?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 14.53,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "The diagnosis affecting the most patients is Gingivitis (disorder), with 86 patients.\n\nSource: clinical_db.conditionsThe diagnosis affecting the most patients is Gingivitis (disorder), with 86 patients.\n\nSource: clinical_db.conditions",
+   "timings": {
+    "route": 3.0395,
+    "plan": 0.0,
+    "inject_schema": 0.0027,
+    "generate_sql": 0.8245,
+    "validate": 0.0503,
+    "row_filter": 0.0,
+    "execute": 0.0726,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 10.544,
+    "verify_numbers": 0.0002
+   }
+  },
+  {
+   "id": "XD04",
+   "category": "cross_db",
+   "question": "Which hospital or clinic had the most visits? Give its name.",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 53.78,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "ARBOUR-FULLER HOSPITAL had the most visits.\nSource: clinical_db.encounters, billing_db.organizations",
+   "timings": {
+    "route": 10.3155,
+    "plan": 12.1498,
+    "inject_schema": 0.0015,
+    "generate_sql": 20.5804,
+    "validate": 0.21869999999999998,
+    "row_filter": 0.0156,
+    "execute": 0.1113,
+    "next_step": 0.0,
+    "merge": 0.0001,
+    "synthesize": 10.0807,
+    "verify_numbers": 0.3083
+   }
+  },
+  {
+   "id": "HY03",
+   "category": "hybrid",
+   "question": "What is my metformin used for?",
+   "correct": false,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [
+    "missing any of: glycemic / blood sugar / glucose / diabetes"
+   ],
+   "seconds": 25.72,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "No records found for that question (searched clinical_db.supplies, openFDA label: Metformin Er 500 Mg \u2014 Uses).",
+   "timings": {
+    "route": 10.7365,
+    "plan": 0.0,
+    "inject_schema": 0.0008,
+    "generate_sql": 11.4612,
+    "validate": 0.0038,
+    "row_filter": 0.0,
+    "execute": 0.008,
+    "next_step": 0.0038,
+    "merge": 0.0,
+    "retrieve": 3.5015,
+    "synthesize": 0.0,
+    "verify_numbers": 0.0003
+   }
+  },
+  {
+   "id": "PT01",
+   "category": "patient",
+   "question": "When was my last visit?",
+   "correct": false,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [
+    "missing true value(s): 2026-10-14"
+   ],
+   "seconds": 21.47,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "(privacy question: not stored)",
+   "timings": {
+    "route": 10.5304,
+    "plan": 0.0,
+    "inject_schema": 0.0012,
+    "generate_sql": 10.0101,
+    "validate": 0.002,
+    "row_filter": 0.0,
+    "execute": 0.0098,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.9209,
+    "verify_numbers": 0.0002
+   }
+  },
+  {
+   "id": "PT02",
+   "category": "patient",
+   "question": "How much do I still owe on my claims?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 32.28,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "(privacy question: not stored)",
+   "timings": {
+    "route": 10.9167,
+    "plan": 0.0,
+    "inject_schema": 0.0026,
+    "generate_sql": 11.4784,
+    "validate": 0.0029,
+    "row_filter": 0.0018,
+    "execute": 0.008,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 9.8675,
+    "verify_numbers": 0.0001
+   }
+  },
+  {
+   "id": "PT03",
+   "category": "patient",
+   "question": "Am I allergic to anything?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 32.17,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "(privacy question: not stored)",
+   "timings": {
+    "route": 9.7656,
+    "plan": 0.0,
+    "inject_schema": 0.0006,
+    "generate_sql": 11.4004,
+    "validate": 0.0029,
+    "row_filter": 0.0,
+    "execute": 0.024,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 10.9722,
+    "verify_numbers": 0.0001
+   }
+  }
+ ]
+}

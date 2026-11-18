@@ -77,6 +77,11 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
             f"Results ({result.total_rows} rows{', TRUNCATED' if result.truncated else ''}; showing {shown}):\n"
             f"{_results_table(state, limit)}\n\n"
         )
+    if result is not None and result.total_rows == 0 and chunks:
+        # Final review: without this, "What is my amoxicillin used for?" from someone who never took it
+        # could get "Your amoxicillin is used for…".
+        user += ("Note: the database search found no matching records for this person — this medicine is not in "
+                 "their records. Answer from the label only, and say plainly that it is not in their records.\n\n")
     if state.get("rag_note"):  # also when nothing was found: "no Boxed warning section for X" is an answer
         user += f"What was checked in the drug labels: {state['rag_note']}\n\n"
     if chunks:
@@ -105,7 +110,9 @@ def synthesize(state: ChatState, deps: Deps) -> dict:
     result = state.get("result")
     if result is not None:  # a database query ran (sql or hybrid)
         all_empty = all(v is None for row in result.rows for v in row)  # e.g. max(date) over nothing -> [[None]]
-        if result.total_rows == 0 or all_empty:
+        # No rows — but if drug-label passages were found (the question named the medicine), they can
+        # still answer it. Accuracy report (HY03): "No records found" while metformin's label was right there.
+        if (result.total_rows == 0 or all_empty) and not state.get("chunks"):
             where = ", ".join(state.get("sources") or []) or "the database"
             return {"kind": "answer", "answer": f"No records found for that question (searched {where})."}
     elif not state.get("chunks"):

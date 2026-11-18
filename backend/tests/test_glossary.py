@@ -55,3 +55,10 @@ def test_outstanding_balance_term():
     hits = _matching_terms("What is the total outstanding patient balance on claims?", g.terms)
     assert any("outstandingp" in t.sql_hint for t in hits)
     assert "not" in g.columns["claims_transactions.outstanding"].lower()
+
+
+def test_condition_type_suffix_explained():
+    # First accuracy run (CL10): asked for the most common *disorder*, the AI answered
+    # "Medication review due (situation)" — it didn't know the bracket at the end is the type.
+    note = load_glossary().columns["conditions.description"].lower()
+    assert "(disorder)" in note and "(situation)" in note and "(finding)" in note

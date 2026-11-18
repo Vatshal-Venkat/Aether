@@ -43,6 +43,7 @@ class DocumentRef(BaseModel):
 class ChatResult(BaseModel):
     answer: str
     kind: AnswerKind
+    route: str | None = None   # what the router decided: sql / rag / hybrid / refuse / out_of_scope
     sql: list[SqlRecord] = []
     sources: list[str] = []
     table: QueryResult | None = None
@@ -66,14 +67,28 @@ def build_deps(settings: Settings) -> Deps:
     )
 
 
+def is_rate_limit(exc: Exception) -> bool:
+    """Did the AI provider say "too many requests" (HTTP 429)? Works for Groq, Gemini and plain HTTP errors."""
+    if "ratelimit" in type(exc).__name__.lower():
+        return True
+    for attr in ("status_code", "code"):
+        if getattr(exc, attr, None) == 429:
+            return True
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) == 429
+
+
 def friendly_error(exc: Exception) -> str:
-    """Pick a message that points the user in the right direction."""
+    """Pick a message that points the user in the right direction. Only a real rate limit says
+    "rate-limited": the accuracy report counts those questions as "not run" instead of wrong."""
     if isinstance(exc, LLMOutputError):
         return "The AI gave a reply I couldn't use. Please try again, or try rephrasing your question."
     if isinstance(exc, SQLAlchemyError):
         return "The database is unavailable right now. Please try again shortly."
+    if is_rate_limit(exc):
+        return "The AI service is rate-limited right now (free-tier limit). Please try again in a minute."
     if isinstance(exc, _transient_errors()):
-        return "The AI service is unavailable or rate-limited right now. Please try again in a minute."
+        return "The AI service is unavailable right now. Please try again in a minute."
     return "Something went wrong while answering. The details are in the server log."
 
 
@@ -134,6 +149,7 @@ def _package(final: dict) -> ChatResult:
     return ChatResult(
         answer=final["answer"],
         kind=final["kind"],
+        route=final["route"].kind if final.get("route") else None,
         # One record per try, on its own database; shows what really ran (with any row filter added).
         sql=[SqlRecord(db=a.get("db") or final.get("db", "clinical"), query=a.get("executed") or a["sql"],
                        error=a["error"]) for a in final.get("attempts") or []],

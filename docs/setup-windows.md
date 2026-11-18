@@ -90,6 +90,21 @@ npm run dev
 Open **http://localhost:5173**. The small dot top-right breathes while the backend is running and goes
 hollow if it isn't. Run the website's own tests with `npm test`.
 
+## 9. Measure accuracy (the accuracy report)
+*Why:* asks Aether ~46 fixed questions and checks every answer against the true value computed
+straight from the databases. Needs the databases and the free AI key; takes about 5–10 minutes
+(it paces itself and waits if the free AI tier is busy).
+
+```bash
+# from backend/, venv active
+python -m scripts.run_eval                     # everything
+python -m scripts.run_eval --only CL01,XD01    # just some questions
+python -m scripts.run_eval --category rag      # one category
+```
+
+The report is saved in `docs/eval/` (a readable `.md` and a detailed `.json`). The questions live in
+`backend/app/eval/questions.yaml` — add your own there.
+
 ## Optional: look at the data yourself
 **DBeaver Community** (https://dbeaver.io) opens both databases side by side. pgAdmin
 (installed with PostgreSQL) and MySQL Workbench also work.

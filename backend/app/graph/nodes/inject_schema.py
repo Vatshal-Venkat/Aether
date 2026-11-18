@@ -70,6 +70,11 @@ def inject_schema(state: ChatState, deps: Deps) -> dict:
         chosen = ["patients", *chosen[: MAX_TABLES - 1]]
     if link_table and link_table not in chosen:  # the table that connects the two steps must be shown
         chosen = [link_table, *chosen[: MAX_TABLES - 1]]
+    route = state.get("route")
+    if route and route.kind == "hybrid" and "medications" in scores and "medications" not in chosen:
+        # A records + drug-label question is about someone's medicines. Accuracy report (HY03):
+        # "what is my metformin USED for" matched "supplies ... USED during visits" instead.
+        chosen = ["medications", *chosen[: MAX_TABLES - 1]]
 
     # Patient mode: hide population totals (PII is already absent from the catalog).
     hidden = deps.glossary.blocked_columns(state["role"]) - set(deps.glossary.pii_columns)

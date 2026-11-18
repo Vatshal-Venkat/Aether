@@ -37,7 +37,7 @@ columns:
   encounters.total_claim_cost: Total billed for the visit.
   encounters.payer_coverage: Amount of the visit paid by the insurer.
   conditions.stop: NULL means the condition is ongoing.
-  conditions.description: "Diagnosis name, e.g. 'Diabetes mellitus type 2 (disorder)', 'Essential hypertension (disorder)'."
+  conditions.description: "Condition name ending with its TYPE in brackets: '(disorder)' = a real diagnosis, e.g. 'Essential hypertension (disorder)'; '(finding)' = an observation such as 'Full-time employment (finding)'; '(situation)' = an administrative state such as 'Medication review due (situation)'. For diagnoses/diseases/disorders use description LIKE '%(disorder)'."
   observations.description: "What was measured, e.g. 'Hemoglobin A1c/Hemoglobin.total in Blood', 'Systolic Blood Pressure'."
   observations.value: "Stored as TEXT. When type = 'numeric', CAST(value AS NUMERIC) before comparing or averaging."
   observations.type: "'numeric' or 'text' — says how to read value."

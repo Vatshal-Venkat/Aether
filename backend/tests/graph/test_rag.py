@@ -225,3 +225,32 @@ def test_numbers_inside_citation_labels_are_not_flagged():
              "sources": [chunks[0].label],
              "answer": "Diarrhea (10%). Source: openFDA label: Metformin Er 500 Mg — Side effects"}
     assert verify_numbers(state, make_deps(ScriptedLLM()))["unverified_numbers"] == []
+
+
+# --- accuracy report HY03: "What is my metformin used for?" ---------------------------------------
+def test_hybrid_schema_always_offers_medications():
+    # The SQL step searched clinical_db.supplies, found nothing, and the labels were never used.
+    from app.graph.nodes.inject_schema import inject_schema
+    from app.graph.state import PlanStep, RouteDecision
+    state = {"question": "What is my metformin used for?", "role": "patient", "patient_id": "p1",
+             "route": RouteDecision(kind="hybrid", databases=["clinical"]),
+             "plan": [PlanStep(db="clinical", goal="What is my metformin used for?")], "step": 0, "link": None}
+    deps = make_deps(ScriptedLLM())
+    from app.db.catalog import ColumnInfo, TableInfo
+    # Like the real catalog: "supplies ... used during visits" shares the word "used" with the question.
+    deps.catalog.tables["supplies"] = TableInfo("supplies", "clinical", [ColumnInfo("description", "text")],
+                                                "Medical supplies used during visits.")
+    assert "TABLE medications" in inject_schema(state, deps)["schema_text"]
+
+
+def test_hybrid_with_no_rows_still_answers_from_named_drug_labels(store, clinical):
+    llm = ScriptedLLM(route("hybrid", ["clinical"], drugs=["lisinopril"]),
+                      "SELECT description FROM medications WHERE patient = 'nobody'",
+                      "Lisinopril is used for high blood pressure. Source: openFDA label: Lisinopril — Uses")
+    result = ask(llm, "What is my lisinopril used for?", store, engines={"clinical": clinical})
+    assert "No records found" not in result.answer and "blood pressure" in result.answer
+    assert result.documents
+    # Final review: the AI must be told the records had NO match, so it can't say "your lisinopril…"
+    # to someone who has never taken it.
+    prompt = llm.prompt_text(2)
+    assert "found no matching records" in prompt and "not in their records" in prompt
