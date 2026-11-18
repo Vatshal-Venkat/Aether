@@ -1,7 +1,7 @@
 // What the backend is doing -> how the orbs move, and what the caption says.
 //
 // Plain English: each step of the pipeline has its own "mood" (rhythm):
-//   calm    understanding the question     wide, unhurried drift; slow breathing
+//   calm    recalling / understanding      wide, unhurried drift; slow breathing
 //   write   reading tables / writing SQL   droplets swirl fast and close, like busy hands
 //   retry   fixing a failed query          an urgent, slightly jittery swirl
 //   check   safety check / privacy filter  everything pulls into one drop, held still and tight
@@ -40,6 +40,7 @@ export const MOODS: Record<Mood, MoodShape> = {
 export function moodFor(progress: Progress | null): Mood {
   if (!progress) return "calm";
   switch (progress.step) {
+    case "contextualize":
     case "route":
     case "plan":
       return "calm";
@@ -67,6 +68,8 @@ const DB_LABEL = { clinical: "clinical_db", billing: "billing_db" } as const;
 export function phaseLabel(progress: Progress | null): string {
   if (!progress) return "Starting";
   switch (progress.step) {
+    case "contextualize":
+      return "Recalling the conversation";
     case "route":
       return "Understanding the question";
     case "plan":

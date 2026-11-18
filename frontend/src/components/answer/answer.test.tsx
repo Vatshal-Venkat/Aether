@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ChatResult } from "../../api/types";
 import { AnswerCard, cleanAnswer } from "./AnswerCard";
 
@@ -21,7 +21,7 @@ const base: ChatResult = {
 describe("AnswerCard", () => {
   it("renders answer text and meta (sources, total time)", () => {
     render(<AnswerCard result={base} />);
-    expect(screen.getByText("8").tagName).toBe("STRONG");
+    expect(screen.getByText("8").closest("strong")).not.toBeNull();  // words are revealed one by one, each in a span
     expect(screen.getByText("clinical_db.conditions")).toBeInTheDocument();
     expect(screen.getByText("2.8 s")).toBeInTheDocument();
   });
@@ -90,7 +90,7 @@ describe("AnswerCard polish (found in the real browser)", () => {
     const text = "Lisinopril may cause cough【2】.\n\nSources: clinical_db.medications; openFDA label: Lisinopril — Side effects.";
     render(<AnswerCard result={{ ...base, answer: text }} />);
     expect(screen.queryByText(/^Sources:/)).toBeNull();
-    expect(screen.getByText("Lisinopril may cause cough.")).toBeInTheDocument();
+    expect(document.querySelector(".answer__text")).toHaveTextContent("Lisinopril may cause cough.");
   });
 
   it("meta lists database tables and a label count, not every label", () => {
@@ -135,4 +135,33 @@ describe("cleanAnswer keeps real content (final review)", () => {
     expect(cleanAnswer("8 patients.\n\n**Sources:** clinical_db.conditions", true)).toBe("8 patients.");
     expect(cleanAnswer("8 patients.\nSource: clinical_db.conditions", true)).toBe("8 patients.");
   });
+});
+
+describe("conversation (Plan 4)", () => {
+  it("a clarifying question offers one-click options", async () => {
+    const picked: string[] = [];
+    render(<AnswerCard result={{ ...base, kind: "clarification", answer: "Revenue of what — a hospital or an insurer?",
+      options: ["Hospitals", "Insurers"], sql: [], table: null, timings: {} }} onOption={(o) => picked.push(o)} />);
+    expect(document.querySelector(".answer__text")).toHaveTextContent("Revenue of what");
+    await userEvent.click(screen.getByRole("button", { name: "Insurers" }));
+    expect(picked).toEqual(["Insurers"]);
+  });
+
+  it("shows how a follow-up was understood", () => {
+    render(<AnswerCard result={{ ...base, standalone_question: "How many female patients have diabetes?" }} />);
+    expect(screen.getByText("Understood as")).toBeInTheDocument();
+    expect(screen.getByText("How many female patients have diabetes?")).toBeInTheDocument();
+  });
+});
+
+it("reduced motion shows the answer at once (no word-by-word reveal)", () => {
+  // Final review, Plan 4: the global reduced-motion rule shortened the animation but not its delay.
+  const original = window.matchMedia;
+  window.matchMedia = vi.fn().mockImplementation((q: string) => ({
+    matches: q.includes("reduce"), media: q, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+  const { container } = render(<AnswerCard result={base} />);
+  expect(container.querySelectorAll(".answer__text span.w")).toHaveLength(0);
+  expect(container.querySelector(".answer__text")).toHaveTextContent("There are 8 patients with diabetes.");
+  window.matchMedia = original;
 });

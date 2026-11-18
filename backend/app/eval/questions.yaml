@@ -355,20 +355,39 @@
   expect_kind: any
   privacy: true
 
-# ---------------------------------------------------------------- not built yet (Plan 4) — shown, not scored
-- id: PL01
-  category: planned
+# ---------------------------------------------------------------- conversation (Plan 4)
+- id: CV01
+  category: conversation
   role: clinician
   question: What's the revenue?
   expect_kind: clarification
-  planned: Plan 4
+  expect_route: clarify
   note: Ambiguous — revenue of which hospital or insurer? Aether should ask back.
 
-- id: PL02
-  category: planned
+- id: CV02
+  category: conversation
+  role: clinician
+  question: Insurers
+  follow_up_of: CV01
+  expect_route: sql
+  gold: {db: billing, sql: "SELECT round(sum(revenue), 2), (SELECT name FROM payers ORDER BY revenue DESC LIMIT 1) FROM payers"}
+  gold_check: any
+  note: Picks an option after CV01's clarifying question. Two fair readings are accepted — the insurers' total revenue, or the insurer with the highest revenue.
+
+- id: CV03
+  category: conversation
   role: clinician
   question: How many of them are female?
   follow_up_of: CL11
-  planned: Plan 4
+  expect_route: sql
   gold: {db: clinical, sql: "SELECT count(DISTINCT c.patient) FROM conditions c JOIN patients p ON p.id = c.patient WHERE c.description ILIKE '%diabetes%' AND c.description NOT ILIKE 'prediabetes%' AND p.gender = 'F'"}
   note: Needs conversation memory ("them" = the diabetic patients from CL11).
+
+- id: CV04
+  category: conversation
+  role: clinician
+  question: And how many unique customers does it have?
+  follow_up_of: BI01
+  expect_route: sql
+  gold: {db: billing, sql: "SELECT unique_customers FROM payers ORDER BY unique_customers DESC LIMIT 1"}
+  note: 'The word "it" means the insurer from BI01 (Medicaid).'

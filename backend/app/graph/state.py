@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from app.db.engines import DbName
 from app.rag.store import Chunk
 
-RouteKind = Literal["sql", "rag", "hybrid", "out_of_scope", "refuse"]
-AnswerKind = Literal["answer", "refusal", "out_of_scope", "error"]
+RouteKind = Literal["sql", "rag", "hybrid", "clarify", "out_of_scope", "refuse"]
+AnswerKind = Literal["answer", "clarification", "refusal", "out_of_scope", "error"]
 
 
 class RouteDecision(BaseModel):
@@ -21,6 +21,8 @@ class RouteDecision(BaseModel):
     databases: list[DbName] = []
     reason: str = ""
     drugs: list[str] = []  # medicine names the router saw in the question (for drug-label lookups)
+    clarify_question: str = ""  # kind "clarify": the short question to ask back
+    options: list[str] = []     # kind "clarify": 2-4 likely answers the person can click
 
 
 class SqlAttempt(TypedDict, total=False):
@@ -75,7 +77,9 @@ def merge_dicts(a: dict, b: dict) -> dict:
 
 
 class ChatState(TypedDict, total=False):
-    question: str
+    question: str                  # the standalone question (a follow-up is rewritten first)
+    original_question: str         # what the person actually typed, when it was rewritten
+    history: list[dict]            # recent turns of this conversation: question, answer, kind
     role: Literal["clinician", "patient"]
     patient_id: str | None
     session_id: str

@@ -97,10 +97,10 @@ describe("App", () => {
     askChat.mockResolvedValue(answer("Answer one."));
     render(<App />);
     await ask("Q1");
-    await screen.findByText("Answer one.");
+    await waitFor(() => expect(document.querySelector(".answer__text")).toHaveTextContent("Answer one."));
     const firstSession = askChat.mock.calls[0][0].session_id;
     await userEvent.click(screen.getByRole("button", { name: "Patient" }));
-    expect(screen.queryByText("Answer one.")).toBeNull();
+    expect(document.querySelector(".answer__text")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Clinician" }));
     await ask("Q2");
     expect(askChat.mock.calls[1][0].session_id).not.toBe(firstSession);
@@ -113,7 +113,7 @@ describe("App", () => {
     await ask("Slow clinician question");
     await userEvent.click(screen.getByRole("button", { name: "Patient" }));
     await act(async () => late.resolve(answer("Clinician-only answer")));
-    expect(screen.queryByText("Clinician-only answer")).toBeNull();
+    expect(document.body.textContent).not.toContain("Clinician-only answer");  // text check: answers are revealed word by word
   });
 
   it("shows a network error and re-enables the composer", async () => {
@@ -203,5 +203,19 @@ describe("live progress drives the thinking orbs", () => {
     await userEvent.click(screen.getByRole("button", { name: "Patient" }));
     await act(async () => report({ step: "execute", db: "clinical" }));
     expect(screen.queryByText(/Querying clinical_db/)).toBeNull();
+  });
+});
+
+describe("clarification options in the conversation", () => {
+  it("clicking an option sends it as the next message", async () => {
+    askChat.mockResolvedValueOnce({ ...answer("Revenue of what — a hospital or an insurer?"), kind: "clarification",
+      options: ["Hospitals", "Insurers"] } as ChatResult);
+    askChat.mockResolvedValueOnce(answer("UnitedHealthcare has the highest revenue."));
+    render(<App />);
+    await ask("What's the revenue?");
+    await userEvent.click(await screen.findByRole("button", { name: "Insurers" }));
+    await waitFor(() => expect(askChat).toHaveBeenCalledTimes(2));
+    expect(askChat.mock.calls[1][0].message).toBe("Insurers");
+    expect(askChat.mock.calls[1][0].session_id).toBe(askChat.mock.calls[0][0].session_id); // same conversation
   });
 });

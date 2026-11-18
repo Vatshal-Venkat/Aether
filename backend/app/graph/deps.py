@@ -9,6 +9,7 @@ from sqlalchemy import Engine
 from app.config import Settings
 from app.db.catalog import Catalog
 from app.db.engines import DbName
+from app.memory.store import ConversationStore
 from app.rag.store import DrugLabelStore
 from app.semantic.glossary import Glossary
 
@@ -21,5 +22,6 @@ class Deps:
     glossary: Glossary
     engines: dict[DbName, Engine]
     store: DrugLabelStore | None = None
+    memory: ConversationStore | None = None  # conversation turns (follow-ups)
     patient_names: dict[str, str] = field(default_factory=dict)  # patient id -> "First123 Last456"
     provider_names: list[str] = field(default_factory=list)      # doctors' names (they share surnames with patients)

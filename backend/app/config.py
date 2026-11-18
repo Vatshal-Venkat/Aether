@@ -56,6 +56,10 @@ class Settings(BaseSettings):
 
     data_dir: Path = BACKEND_DIR / "data"
 
+    # Conversation memory: where turns are kept and how many recent ones a follow-up may use
+    memory_path: Path = BACKEND_DIR / "data" / "memory.sqlite"
+    memory_turns: int = 3
+
     # Drug-label library (RAG): where it is stored and how many passages to look up
     chroma_dir: Path = BACKEND_DIR / "chroma"
     rag_top_k: int = 6          # passages for a general drug question

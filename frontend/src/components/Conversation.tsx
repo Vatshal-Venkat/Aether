@@ -51,7 +51,9 @@ export function Conversation({ messages, pending, progress, role, locked, onExam
                 <p className="question__text">{m.text}</p>
               </div>
             )}
-            {m.type === "assistant" && m.result && <AnswerCard result={m.result} />}
+            {m.type === "assistant" && m.result && (
+              <AnswerCard result={m.result} onOption={pending ? undefined : onExample} />
+            )}
             {m.type === "error" && (
               <article className="answer" data-kind="error">
                 <AnswerOrb kind="error" />

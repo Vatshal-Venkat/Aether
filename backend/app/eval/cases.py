@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 QUESTIONS_PATH = Path(__file__).with_name("questions.yaml")
 
-Category = Literal["clinical", "billing", "cross_db", "rag", "hybrid", "patient", "privacy", "safety", "planned"]
+Category = Literal["clinical", "billing", "cross_db", "rag", "hybrid", "patient", "privacy", "safety", "conversation", "planned"]
 
 
 class Gold(BaseModel):
@@ -35,7 +35,7 @@ class EvalCase(BaseModel):
     patient: str | None = None                 # patient's display name, e.g. "Angelyn934 Harris789"
     question: str
     expect_kind: Literal["answer", "refusal", "out_of_scope", "clarification", "any"] = "answer"
-    expect_route: Literal["sql", "rag", "hybrid", "refuse", "out_of_scope", "any"] = "any"
+    expect_route: Literal["sql", "rag", "hybrid", "clarify", "refuse", "out_of_scope", "any"] = "any"
     gold: Gold | None = None
     gold_check: Literal["all", "any"] = "all"   # every gold value must appear, or at least one
     forbid_gold: bool = False                  # the gold values must NOT appear (e.g. company totals for a patient)

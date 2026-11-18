@@ -36,3 +36,14 @@ describe("mini markdown", () => {
     expect(screen.getByTestId("md").textContent).toContain("<img src=x");
   });
 });
+
+describe("word-by-word reveal", () => {
+  it("wraps words in timed spans but keeps the text intact", () => {
+    const { container } = render(<div>{renderMarkdown("There are **8** patients.\n\n- one item", { reveal: true })}</div>);
+    const words = container.querySelectorAll("span.w");
+    expect(words.length).toBeGreaterThanOrEqual(5);
+    const order = [...words].map((w) => Number((w as HTMLElement).style.getPropertyValue("--i")));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(container.textContent).toBe("There are 8 patients.one item");
+  });
+});

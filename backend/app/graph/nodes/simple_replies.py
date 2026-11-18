@@ -32,3 +32,11 @@ def fail(state: ChatState, deps: Deps) -> dict:
         "answer": "I couldn't build a working query for that after 3 tries. "
         "Try rephrasing, or ask something more specific.",
     }
+
+
+@timed("clarify")
+def clarify(state: ChatState, deps: Deps) -> dict:
+    """Ask back instead of guessing ("Revenue of what — a hospital or an insurer?"); the website shows
+    the router's suggested options as one-click replies."""
+    question = state["route"].clarify_question.strip() or "Could you say a bit more about what you mean?"
+    return {"kind": "clarification", "answer": question}

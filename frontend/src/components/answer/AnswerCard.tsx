@@ -12,7 +12,7 @@ import { Disclosures, type Panel } from "./Disclosure";
 import { LabelList, ResultTable, SqlList, Timeline } from "./details";
 import "./answer.css";
 
-const KIND_LABEL = { answer: "", refusal: "Not allowed", out_of_scope: "Out of scope", error: "Couldn't answer" };
+const KIND_LABEL = { answer: "", clarification: "A quick question", refusal: "Not allowed", out_of_scope: "Out of scope", error: "Couldn't answer" };
 
 /** The AI ends answers with its own "Source: ..." line and sometimes adds 【1】 markers; the meta line
  *  under the answer already shows the sources, so both are dropped from the displayed text. */
@@ -32,7 +32,7 @@ export function cleanAnswer(text: string, hasSources: boolean): string {
   return out;
 }
 
-export function AnswerCard({ result }: { result: ChatResult }) {
+export function AnswerCard({ result, onOption }: { result: ChatResult; onOption?: (option: string) => void }) {
   const reduced = useReducedMotion();
   const total = Object.values(result.timings).reduce((a, b) => a + b, 0);
   const tables = result.sources.filter((s) => !s.startsWith("openFDA label:"));
@@ -50,12 +50,21 @@ export function AnswerCard({ result }: { result: ChatResult }) {
   }
   if (Object.keys(result.timings).length) panels.push({ id: "timeline", title: "Timeline", content: <Timeline timings={result.timings} /> });
 
-  const blocks = renderMarkdown(cleanAnswer(result.answer, result.sources.length > 0));
+  // Word-by-word reveal (the full text is in the page from the start). With "reduce motion" on, the answer
+  // appears at once: no word spans at all (final review, Plan 4).
+  const blocks = renderMarkdown(cleanAnswer(result.answer, result.sources.length > 0), { reveal: !reduced });
   return (
     <article className="answer" data-kind={result.kind}>
       <AnswerOrb kind={result.kind} />
       <div className="answer__body">
         {KIND_LABEL[result.kind] && <p className="answer__kind">{KIND_LABEL[result.kind]}</p>}
+        {result.standalone_question && (
+          // How a follow-up was read ("how many of them..." -> the full question), so a wrong reading is visible.
+          <p className="answer__understood">
+            <span className="answer__understood-label">Understood as</span>
+            <span>{result.standalone_question}</span>
+          </p>
+        )}
         <div className="answer__text">
           {blocks.map((block, i) => (
             <motion.div
@@ -93,6 +102,15 @@ export function AnswerCard({ result }: { result: ChatResult }) {
               </>
             )}
           </motion.p>
+        )}
+        {result.kind === "clarification" && (result.options?.length ?? 0) > 0 && (
+          <div className="answer__options">
+            {result.options!.map((option) => (
+              <button key={option} type="button" className="chip" disabled={!onOption} onClick={() => onOption?.(option)}>
+                {option}
+              </button>
+            ))}
+          </div>
         )}
         <Disclosures panels={panels} />
       </div>

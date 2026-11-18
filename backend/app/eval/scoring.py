@@ -39,6 +39,10 @@ def normalise(text: str) -> str:
     return text.translate(_LOOKALIKES)
 
 
+NUMBER_WORDS = {w: i for i, w in enumerate(
+    "zero _ two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+    "sixteen seventeen eighteen nineteen twenty".split()) if w != "_"}
+NUMBER_WORD = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", re.IGNORECASE)
 DATE_OR_TIME = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?\b|\b\d{1,2}:\d{2}(?::\d{2})?\b")
 LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s+")
 
@@ -51,6 +55,13 @@ def numbers_in(text: str) -> list[tuple[float, int]]:
     text = DATE_OR_TIME.sub(" ", text)
     text = LIST_MARKER.sub(" ", text)
     found = []
+    # Numbers written as words ("Eight patients") count too; "one" is left out — it's usually prose ("no one").
+    for m in NUMBER_WORD.finditer(text):
+        # Only at the start of a sentence/line/item ("Eight patients have…"), where writers spell numbers
+        # out — mid-sentence prose like "the two largest insurers" is not a count (final review, Plan 4).
+        before = text[:m.start()].rstrip(" *_")
+        if not before or before[-1] in ".!?:\n-•|":
+            found.append((float(NUMBER_WORDS[m.group(0).lower()]), 0))
     for m in NUMBER.finditer(text):
         raw = m.group(0).replace(",", "")
         try:

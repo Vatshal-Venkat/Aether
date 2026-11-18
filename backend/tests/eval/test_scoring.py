@@ -182,3 +182,18 @@ def test_only_true_rate_limits_are_not_run():
     other = _result("The AI service is unavailable right now. Please try again in a minute.", kind="error", route=None)
     s = score_case(_case(), other, [[99]], [])
     assert not s.not_run and not s.correct
+
+
+def test_number_words_count():
+    # Plan 4 run (smaller model): "Eight patients have diabetes" / "Four female patients" were correct answers.
+    assert numbers_match(8, "Eight patients have diabetes.")
+    assert numbers_match(4, "Four female patients have a diabetes condition.")
+    assert not numbers_match(4, "Fourteen patients")
+    assert not numbers_match(1, "No one has it.")  # "one" inside ordinary phrases is not a count
+
+
+def test_number_words_only_at_sentence_start():
+    # Final review: "The two largest insurers ..." matched gold 2.
+    assert not numbers_match(2, "The two largest insurers are Medicaid (52) and Medicare (40).")
+    assert numbers_match(2, "Two insurers qualify.")
+    assert numbers_match(4, "Yes. Four female patients have it.")

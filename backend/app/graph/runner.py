@@ -20,6 +20,7 @@ from app.graph.deps import Deps
 from app.graph.state import AnswerKind, QueryResult
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.memory.store import ConversationStore, Turn
 from app.rag.store import DrugLabelStore
 from app.llm.client import LLMOutputError, _transient_errors, get_chat_model
 from app.semantic.glossary import load_glossary
@@ -43,7 +44,9 @@ class DocumentRef(BaseModel):
 class ChatResult(BaseModel):
     answer: str
     kind: AnswerKind
-    route: str | None = None   # what the router decided: sql / rag / hybrid / refuse / out_of_scope
+    route: str | None = None   # what the router decided: sql / rag / hybrid / clarify / refuse / out_of_scope
+    standalone_question: str | None = None  # a follow-up, rewritten as a full question ("Understood as: ...")
+    options: list[str] = []    # a clarifying question's suggested answers (one click each on the website)
     sql: list[SqlRecord] = []
     sources: list[str] = []
     table: QueryResult | None = None
@@ -62,6 +65,7 @@ def build_deps(settings: Settings) -> Deps:
         glossary=glossary,
         engines=engines,
         store=DrugLabelStore.open(settings.chroma_dir),  # None if not built: SQL questions still work
+        memory=ConversationStore(settings.memory_path),  # conversation turns, for follow-up questions
         patient_names={p["id"]: p["name"] for p in list_patients(engines["clinical"])},
         provider_names=list_provider_names(engines["billing"]),
     )
@@ -92,22 +96,41 @@ def friendly_error(exc: Exception) -> str:
     return "Something went wrong while answering. The details are in the server log."
 
 
-def _initial_state(question: str, role: str, patient_id: str | None, session_id: str) -> dict:
+def _initial_state(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> dict:
+    """The starting notepad, including this person's recent turns (if conversation memory is on)."""
+    history = []
+    if deps.memory is not None:
+        history = [{"question": t.question, "answer": t.answer, "kind": t.kind}
+                   for t in deps.memory.history(session_id, role, patient_id, deps.settings.memory_turns)]
     return {"question": question, "role": role, "patient_id": patient_id, "session_id": session_id,
-            "attempts": [], "timings": {}}
+            "history": history, "attempts": [], "timings": {}}
+
+
+def _remember(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str,
+              result: ChatResult) -> None:
+    """Save this turn so the next question in the conversation can refer back to it."""
+    if deps.memory is None:
+        return
+    try:
+        deps.memory.add(Turn(session_id=session_id, role=role, patient_id=patient_id, question=question,
+                             standalone=result.standalone_question or question, answer=result.answer, kind=result.kind))
+    except Exception:  # noqa: BLE001 — losing one memory note must never break the answer
+        log.exception("could not save conversation turn")
 
 
 def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> ChatResult:
     try:
-        final = build_graph(deps).invoke(_initial_state(question, role, patient_id, session_id))
+        final = build_graph(deps).invoke(_initial_state(deps, question, role, patient_id, session_id))
+        result = _package(final)
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         log.exception("chat pipeline failed")
-        return ChatResult(kind="error", answer=friendly_error(exc))
-    return _package(final)
+        result = ChatResult(kind="error", answer=friendly_error(exc))
+    _remember(deps, question, role, patient_id, session_id, result)
+    return result
 
 
 # Steps worth telling the website about (bookkeeping steps like next_step are skipped).
-REPORTED_STEPS = {"route", "plan", "inject_schema", "generate_sql", "validate", "row_filter", "execute",
+REPORTED_STEPS = {"contextualize", "route", "plan", "inject_schema", "generate_sql", "validate", "row_filter", "execute",
                   "merge", "retrieve", "synthesize", "verify_numbers"}
 STEPS_WITH_DB = {"inject_schema", "generate_sql", "validate", "row_filter", "execute"}
 
@@ -131,17 +154,25 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
     billing_db"... so the website can show what is happening (the thinking orbs change rhythm)."""
     final: dict | None = None
     try:
-        stream = build_graph(deps).stream(_initial_state(question, role, patient_id, session_id),
+        stream = build_graph(deps).stream(_initial_state(deps, question, role, patient_id, session_id),
                                           stream_mode=["tasks", "values"])
         for mode, chunk in stream:
             if mode == "values":
                 final = chunk
             elif "input" in chunk and chunk.get("name") in REPORTED_STEPS:  # a step is starting
-                yield {"event": "progress", "data": _progress(chunk["name"], chunk["input"] or {})}
-        yield {"event": "final", "data": _package(final).model_dump()}
+                step_input = chunk["input"] or {}
+                if chunk["name"] == "contextualize" and not step_input.get("history"):
+                    continue  # nothing to recall: the step does nothing, so don't announce it
+                yield {"event": "progress", "data": _progress(chunk["name"], step_input)}
+        result = _package(final)
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         log.exception("chat pipeline failed")
-        yield {"event": "error", "data": {"message": friendly_error(exc)}}
+        result = ChatResult(kind="error", answer=friendly_error(exc))
+        _remember(deps, question, role, patient_id, session_id, result)
+        yield {"event": "error", "data": {"message": result.answer}}
+        return
+    _remember(deps, question, role, patient_id, session_id, result)
+    yield {"event": "final", "data": result.model_dump()}
 
 
 def _package(final: dict) -> ChatResult:
@@ -150,6 +181,8 @@ def _package(final: dict) -> ChatResult:
         answer=final["answer"],
         kind=final["kind"],
         route=final["route"].kind if final.get("route") else None,
+        standalone_question=final["question"] if final.get("original_question") else None,
+        options=final["route"].options if final.get("route") and final.get("kind") == "clarification" else [],
         # One record per try, on its own database; shows what really ran (with any row filter added).
         sql=[SqlRecord(db=a.get("db") or final.get("db", "clinical"), query=a.get("executed") or a["sql"],
                        error=a["error"]) for a in final.get("attempts") or []],

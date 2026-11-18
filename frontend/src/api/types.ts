@@ -3,7 +3,7 @@
 // can warn us if the website and the backend disagree.
 
 export type Role = "clinician" | "patient";
-export type AnswerKind = "answer" | "refusal" | "out_of_scope" | "error";
+export type AnswerKind = "answer" | "clarification" | "refusal" | "out_of_scope" | "error";
 
 export interface SqlRecord {
   db: "clinical" | "billing";
@@ -33,6 +33,9 @@ export interface ChatResult {
   unverified_numbers: string[];
   documents: DocumentRef[];
   timings: Record<string, number>;
+  route?: string | null;
+  standalone_question?: string | null; // a follow-up rewritten as a full question
+  options?: string[];                  // a clarifying question's one-click answers
 }
 
 export interface ChatRequest {
@@ -59,7 +62,7 @@ export interface Health {
 
 /** One "a step is starting" event from POST /api/chat/stream. */
 export type Step =
-  | "route" | "plan" | "inject_schema" | "generate_sql" | "validate" | "row_filter" | "execute"
+  | "contextualize" | "route" | "plan" | "inject_schema" | "generate_sql" | "validate" | "row_filter" | "execute"
   | "merge" | "retrieve" | "synthesize" | "verify_numbers";
 
 export interface Progress {

@@ -18,3 +18,8 @@ describe("what the backend is doing -> orb rhythm and caption", () => {
     expect(phaseLabel(progress)).toBe(label);
   });
 });
+
+it("recalling the conversation is calm", () => {
+  expect(moodFor({ step: "contextualize" })).toBe("calm");
+  expect(phaseLabel({ step: "contextualize" })).toBe("Recalling the conversation");
+});

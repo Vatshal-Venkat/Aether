@@ -53,10 +53,10 @@ def small_catalog() -> Catalog:
     return Catalog(tables)
 
 
-def make_deps(llm, engines=None, store=None, **settings_overrides) -> Deps:
+def make_deps(llm, engines=None, store=None, memory=None, **settings_overrides) -> Deps:
     settings = Settings(_env_file=None, **settings_overrides)
     return Deps(settings=settings, llm=llm, catalog=small_catalog(), glossary=load_glossary(), engines=engines or {},
-                store=store)
+                store=store, memory=memory)
 
 
 class FakeEmbedding:

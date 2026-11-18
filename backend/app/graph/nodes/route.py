@@ -47,8 +47,11 @@ def names_another_patient(question: str, patient_names: dict[str, str], self_id:
 
 @timed("route")
 def route(state: ChatState, deps: Deps) -> dict:
-    if state["role"] == "patient" and names_another_patient(state["question"], deps.patient_names,
-                                                                state.get("patient_id"), deps.provider_names):
+    # Check what the person typed AND the rewritten follow-up: a rewrite can drop Synthea's digits
+    # ("and what about Bob3?" -> "What medications is Bob taking?") — final review, Plan 4.
+    asked = [state["question"], state.get("original_question") or ""]
+    if state["role"] == "patient" and any(names_another_patient(q, deps.patient_names, state.get("patient_id"),
+                                                                deps.provider_names) for q in asked if q):
         return {"route": RouteDecision(kind="refuse", reason="names another patient (checked by code)")}
     decision = ask_json(deps.llm, route_system(state["role"]), state["question"], RouteDecision)
     if decision.kind == "sql" and not decision.databases:

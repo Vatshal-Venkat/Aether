@@ -27,6 +27,21 @@ Drug-label excerpts:
 - Explain in plain language. This is not medical advice: for personal decisions, suggest asking a doctor or pharmacist."""
 
 
+CONTEXTUALIZE_SYSTEM = """You rewrite the latest message of a conversation into ONE standalone question that can be
+understood without the conversation, for a healthcare data chatbot.
+Rules:
+- Resolve references ("them", "that patient", "last year", "and the billing side?") using the earlier turns.
+- If the latest message answers a clarifying question (e.g. "Insurers"), combine it with the question that was asked.
+- If the latest message is already a full question on its own, return it unchanged.
+- Keep names, numbers and dates exactly as written. Never add facts, filters or names that are not in the conversation.
+Reply with JSON: {"standalone": "<the question>"}"""
+
+
+def contextualize_user(history: list[dict], latest: str) -> str:
+    turns = "\n".join(f"User: {t['question']}\nAssistant: {t['answer']}" for t in history)
+    return f"Conversation so far:\n{turns}\n\nLatest message: {latest}"
+
+
 def route_system(role: str) -> str:
     patient_rules = ""
     if role == "patient":
@@ -53,6 +68,9 @@ Choose "kind":
   (e.g. "what are the side effects of metformin?"). Answered from the drug labels.
 - "hybrid": needs a person's records AND drug labels (e.g. "side effects of the medications I'm taking",
   "do any of patient X's drugs have a boxed warning?"). Set "databases" to ["clinical"].
+- "clarify": ONLY when the question is genuinely ambiguous and you cannot pick a clearly most likely meaning
+  (e.g. "what's the revenue?" — of a hospital? of an insurer?). Set "clarify_question" to one short question and
+  "options" to 2-4 short likely answers. If one reading is clearly most likely, answer it instead (kind "sql").
 - "out_of_scope": not answerable from this data (weather, general chit-chat, coding help, personal medical advice).
 - "refuse": not allowed for this user (see rules below).
 {patient_rules}

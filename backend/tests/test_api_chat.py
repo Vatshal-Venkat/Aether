@@ -128,3 +128,20 @@ def test_stream_endpoint_sends_sse(stream_client):
 def test_stream_endpoint_rejects_unknown_patient(stream_client):
     resp = stream_client.post("/api/chat/stream", json={"message": "x", "role": "patient", "patient_id": "nope"})
     assert resp.status_code == 422
+
+
+# --- GET /api/sessions/{id}: the conversation history -------------------------------------------------
+def test_session_history_is_scoped_to_role_and_patient(client, tmp_path):
+    # Final review: the endpoint returned every turn of a session (clinician answers, other patients' turns).
+    from app.memory.store import ConversationStore, Turn
+    deps = client.app.dependency_overrides[get_deps]()
+    deps.memory = ConversationStore(tmp_path / "m.sqlite")
+    for role, pid, q in [("clinician", None, "How many?"), ("patient", "p2", "My meds?")]:
+        deps.memory.add(Turn(session_id="abc", role=role, patient_id=pid, question=q, standalone=q, answer="x", kind="answer"))
+    clin = client.get("/api/sessions/abc", params={"role": "clinician"}).json()
+    assert [t["question"] for t in clin] == ["How many?"]
+    p2 = client.get("/api/sessions/abc", params={"role": "patient", "patient_id": "p2"}).json()
+    assert [t["question"] for t in p2] == ["My meds?"]
+    assert client.get("/api/sessions/abc", params={"role": "patient", "patient_id": "p1"}).json() == []
+    assert client.get("/api/sessions/abc").status_code == 422  # role is required
+    assert "patient_id" not in clin[0]

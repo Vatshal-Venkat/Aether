@@ -24,4 +24,4 @@ def test_gold_sql_parses_in_its_dialect():
 
 def test_every_category_present():
     cats = {c.category for c in load_cases(QUESTIONS_PATH)}
-    assert {"clinical", "billing", "cross_db", "rag", "hybrid", "patient", "privacy", "safety"} <= cats
+    assert {"clinical", "billing", "cross_db", "rag", "hybrid", "patient", "privacy", "safety", "conversation"} <= cats

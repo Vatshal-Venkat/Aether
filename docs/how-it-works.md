@@ -301,14 +301,39 @@ the source line under the answer; ten label citations crowded that line (now "cl
 labels", with the labels in their own panel); and a backend bug — a drug *named* "Metformin ER **500** mg" made
 the fact-checker flag "500" as an unchecked number. All fixed, each with a test first.
 
+### Step 22 — A real conversation (Plan 4) ✅
+Until now every question stood alone. Now Aether keeps a short memory of the conversation:
+
+- **Follow-ups.** Ask "How many patients have diabetes?" (8), then "How many of *them* are female?". Before
+  anything else, a new first step — **contextualize** — rewrites the follow-up into a full question using the last
+  few turns: *"How many patients with diabetes are female?"*. Everything after that works exactly as before. The
+  website shows the rewrite as **"Understood as: …"** under the answer, so a wrong reading is visible at once.
+  A first question has nothing to recall, so this step is skipped and costs no AI call.
+- **Asking back.** "What's the revenue?" — of a hospital? an insurer? Instead of guessing, the router may now
+  reply with one short question and a few one-click options ("Hospitals", "Insurers"). Clicking one continues the
+  same conversation, and the rewrite step turns it into the full question.
+- **Word by word.** Answers now appear word by word. (They are still fact-checked first: the backend holds the text
+  back until the numbers are checked, so this reveal happens on the page — the full text is there from the start,
+  so screen readers and copy/paste get all of it.)
+
+**Where the memory lives, and privacy.** Each turn is a small note in a local file (`backend/data/memory.sqlite`,
+not uploaded anywhere): the question, how it was understood, the first 400 characters of the answer and its kind —
+never the result tables. Notes are found by **conversation + role + patient**: the same conversation id used under
+another patient (or the doctor view) finds nothing. Switching role on the website also starts a fresh conversation.
+And a follow-up that turns into a question about someone else ("and what about Bob?") goes through the same privacy
+checks as any question — it is refused.
+
 ## 5. What happens when you ask a question
 
 ```
  Your question
      │
+ RECALL ── a follow-up ("how many of them…") is rewritten as a full question (skipped for a first question)
+     ▼
  ① ROUTE ──── not about our data? ──► "I can only answer questions about health records…"
      │   └─── patient asking about others? ──► "I can only answer about your own records."
      │   (decides: medical room, billing room, or both)
+     │   ├─── unclear? ──► asks back, with one-click options
      │   └─── a question about medicines in general? ──► RETRIEVE from the drug-label library ──┐
      ▼                                                                                          │
  PLAN ── one room: one step.  Both rooms: two steps joined by a known link (doctor id, patient id…)

@@ -73,3 +73,19 @@ async def chat_stream(req: ChatRequest, deps: Deps = Depends(get_deps), runner=D
     # never blocks the server. no-cache/no-buffering so each event reaches the browser at once.
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/sessions/{session_id}")
+def session_history(session_id: str, role: Literal["clinician", "patient"], patient_id: str | None = None,
+                    deps: Deps = Depends(get_deps)) -> list[dict]:
+    """The turns of one conversation, oldest first: what was typed, how Aether understood it, the answer.
+
+    Scoped like the memory itself: you must say who is asking (role, and patient_id in patient mode),
+    and you only get THAT person's turns — never the clinician view's or another patient's (final review)."""
+    if role == "patient" and not patient_id:
+        raise HTTPException(status_code=422, detail="patient_id is required when role is 'patient'")
+    if deps.memory is None:
+        return []
+    return [{"question": t.question, "standalone": t.standalone, "answer": t.answer, "kind": t.kind,
+             "created_at": t.created_at.isoformat() if t.created_at else None}
+            for t in deps.memory.turns(session_id, role, patient_id if role == "patient" else None)]
