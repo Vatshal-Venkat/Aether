@@ -151,6 +151,13 @@ switching to Gemini or a local model is one line in the settings. If the free se
 provider. It can also force the AI to reply in a strict, machine-readable format (JSON).
 A live test call answered in about 3 seconds.
 
+**Backup model (added 18 Nov 2026):** Groq gives each model its own daily allowance. When the main
+model (`gpt-oss-120b`) says its *daily* allowance is used up, waiting a few seconds won't help, so
+Aether skips the retries and moves straight to a smaller Groq model (`gpt-oss-20b`, setting
+`GROQ_FALLBACK_MODEL`). It leaves the main model alone until the time Groq says it's back, then
+returns to it automatically. Only if both are out does it try Gemini, and only then does the user
+see "rate-limited". Short per-minute limits still get the quick retries on the same model.
+
 ### Steps 9–12 — The pipeline (the librarian's routine) ✅
 This is the heart of Aether. It is built with **LangGraph**, a free tool that runs a series of
 small steps like a flowchart. See the next section for what each step does.
