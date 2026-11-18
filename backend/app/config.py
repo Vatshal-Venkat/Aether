@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     llm_provider: Literal["groq", "gemini", "ollama"] = "groq"
     groq_api_key: str | None = None
     groq_model: str = "openai/gpt-oss-120b"
+    # Used automatically when the main Groq model's daily allowance runs out (it has its own allowance).
+    # Leave empty to switch the fallback off.
+    groq_fallback_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
     ollama_base_url: str = "http://localhost:11434"
