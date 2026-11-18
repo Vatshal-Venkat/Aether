@@ -41,21 +41,6 @@
   filter: blur(22px);
 }
 
-/* The whole cluster turns very slowly, so the merging never looks mechanical. */
-.orbs__spin {
-  transform-box: view-box;
-  transform-origin: 100px 100px;
-  animation: orb-spin 38s linear infinite;
-}
-
-.orbs--active .orbs__spin {
-  animation-duration: 18s;
-}
-
-@keyframes orb-spin {
-  to { transform: rotate(360deg); }
-}
-
 .orbs--active .orbs__halo circle {
   animation: orb-glow 2.4s var(--ease-in-out) infinite alternate;
 }
@@ -65,7 +50,9 @@
   to { opacity: 0.22; }
 }
 
+/* The caption re-mounts on each new step, so this fade replays every time the step changes. */
 .orbs__caption {
+  animation: caption-in 0.45s var(--ease) both;
   margin: 0;
   font-size: 12px;
   letter-spacing: 0.14em;
@@ -149,4 +136,9 @@
   background: transparent;
   border-style: dashed;
   border-color: var(--muted);
+}
+
+@keyframes caption-in {
+  from { opacity: 0; transform: translateY(4px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
 }

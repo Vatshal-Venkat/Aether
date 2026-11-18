@@ -1,5 +1,5 @@
 // The conversation's brain: who is asking (clinician, or which patient), the messages so far, and
-// whether we're waiting for the backend.
+// whether we're waiting for the backend — and, while waiting, which step it reports it is on.
 //
 // Two safety rules live here:
 //  * Switching role or patient wipes the conversation and starts a new session id, so answers
@@ -8,8 +8,8 @@
 //    is thrown away (each send remembers the "generation" it belongs to).
 
 import { useCallback, useRef, useState } from "react";
-import { ApiError, askChat } from "../api/client";
-import type { ChatResult, Patient, Role } from "../api/types";
+import { ApiError, askChatStream } from "../api/client";
+import type { ChatResult, Patient, Progress, Role } from "../api/types";
 
 export interface Message {
   id: string;
@@ -25,6 +25,7 @@ export function useChat() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState<Progress | null>(null); // the step the backend is on
   const session = useRef(newId());
   const generation = useRef(0);
   const inflight = useRef<AbortController | null>(null);
@@ -36,6 +37,7 @@ export function useChat() {
     session.current = newId();
     setMessages([]);
     setPending(false);
+    setProgress(null);
   }, []);
 
   const setRole = useCallback(
@@ -58,9 +60,12 @@ export function useChat() {
       inflight.current = controller;
       setMessages((m) => [...m, { id: newId(), type: "user", text }]);
       setPending(true);
+      setProgress(null);
       try {
-        const result = await askChat(
+        const result = await askChatStream(
           { message: text, role, session_id: session.current, ...(role === "patient" && patient ? { patient_id: patient.id } : {}) },
+          // Live progress: ignored if the user has since switched role/patient.
+          (p) => gen === generation.current && setProgress(p),
           controller.signal,
         );
         if (gen !== generation.current) return;
@@ -79,5 +84,5 @@ export function useChat() {
     [canSend, role, patient],
   );
 
-  return { role, patient, messages, pending, canSend, setRole, send, reset };
+  return { role, patient, messages, pending, progress, canSend, setRole, send, reset };
 }

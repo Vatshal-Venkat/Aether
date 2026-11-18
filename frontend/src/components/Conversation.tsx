@@ -1,21 +1,23 @@
 // The conversation: your questions (right, quiet), Aether's answers (left, with the orb), and —
-// while the backend is working — the thinking orbs with a caption of what it's doing. New
+// while the backend is working — the thinking orbs, moving in the rhythm of the step the backend
+// reports, with a caption naming that step. New
 // messages slide up softly; the view scrolls to the newest one.
 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef } from "react";
-import type { Role } from "../api/types";
+import type { Progress, Role } from "../api/types";
 import type { Message } from "../hooks/useChat";
-import { usePhases } from "../hooks/usePhases";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { AnswerCard } from "./answer/AnswerCard";
 import { EmptyState } from "./EmptyState";
 import { AnswerOrb } from "./orbs/AnswerOrb";
+import { moodFor, phaseLabel } from "./orbs/moods";
 import { ThinkingOrbs } from "./orbs/ThinkingOrbs";
 
 interface Props {
   messages: Message[];
   pending: boolean;
+  progress: Progress | null;
   role: Role;
   locked: boolean;
   onExample: (q: string) => void;
@@ -28,8 +30,7 @@ const rise = {
   transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
 };
 
-export function Conversation({ messages, pending, role, locked, onExample }: Props) {
-  const phase = usePhases(pending);
+export function Conversation({ messages, pending, progress, role, locked, onExample }: Props) {
   const reduced = useReducedMotion();
   const end = useRef<HTMLDivElement>(null);
 
@@ -64,7 +65,7 @@ export function Conversation({ messages, pending, role, locked, onExample }: Pro
         ))}
         {pending && (
           <motion.div key="thinking" className="thinking" {...rise} exit={{ opacity: 0, scale: 0.6, filter: "blur(8px)" }}>
-            <ThinkingOrbs active size="medium" caption={phase} />
+            <ThinkingOrbs active size="medium" mood={moodFor(progress)} caption={phaseLabel(progress)} />
           </motion.div>
         )}
       </AnimatePresence>

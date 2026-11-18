@@ -6,7 +6,9 @@ import { join } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const backend = "http://localhost:8000";
+// 127.0.0.1, not "localhost": on Windows "localhost" tries IPv6 (::1) first; uvicorn listens on IPv4 only,
+// so every request waited ~2.3 s for the fallback (measured: 2.98 s vs 0.68 s for /health).
+const backend = "http://127.0.0.1:8000";
 
 export default defineConfig({
   plugins: [react()],
