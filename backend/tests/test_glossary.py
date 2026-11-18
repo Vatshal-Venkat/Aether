@@ -12,6 +12,13 @@ def test_glossary_loads():
     assert "a1c" in hba1c.sql_hint.lower()
 
 
+def test_name_hints_cover_names_typed_without_digits():
+    # The website shows "Abe Bode" (no Synthea digits), so people type it that way: the AI must match with LIKE.
+    cols = load_glossary().columns
+    for key in ("patients.first", "patients.last", "providers.name"):
+        assert "LIKE" in cols[key] and "without" in cols[key].lower(), key
+
+
 def test_glossary_tables_match_split():
     assert set(load_glossary().tables) == set(TABLE_SPLIT)
 

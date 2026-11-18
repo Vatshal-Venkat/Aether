@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { ApiError, getResultPage } from "../../api/client";
 import type { DocumentRef, QueryResult, Role, SqlRecord } from "../../api/types";
+import { cleanNames } from "../../lib/names";
 
 const DB_LABEL = { clinical: "clinical_db", billing: "billing_db" } as const;
 const MAX_ROWS = 200;
@@ -35,7 +36,7 @@ export function SqlList({ sql }: { sql: SqlRecord[] }) {
 function cell(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
-  return String(value);
+  return cleanNames(String(value)); // "Abe604" -> "Abe" (Synthea's random digits)
 }
 
 export interface Owner {

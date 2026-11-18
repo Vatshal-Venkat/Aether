@@ -137,6 +137,40 @@ describe("cleanAnswer keeps real content (final review)", () => {
   });
 });
 
+describe("names without Synthea's random digits", () => {
+  const named: ChatResult = {
+    ...base,
+    answer: "Abe604 Bode78 has 2 active conditions.",
+    standalone_question: "What conditions does Abe604 Bode78 have?",
+    table: { columns: ["first", "last", "n"], rows: [["Abe604", "Bode78", 2]], total_rows: 1, truncated: false },
+  };
+
+  it("the answer, the 'Understood as' line and the table show clean names", async () => {
+    render(<AnswerCard result={named} />);
+    expect(document.querySelector(".answer__text")).toHaveTextContent("Abe Bode has 2 active conditions.");
+    expect(screen.getByText("What conditions does Abe Bode have?")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Table/ }));
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Abe")).toBeInTheDocument();
+    expect(within(table).queryByText("Abe604")).toBeNull();
+  });
+
+  it("the SQL panel still shows the query exactly as it ran", async () => {
+    const sql = [{ db: "clinical" as const, query: "SELECT * FROM conditions WHERE first = 'Abe604'", error: null }];
+    render(<AnswerCard result={{ ...named, sql }} />);
+    await userEvent.click(screen.getByRole("button", { name: /SQL/ }));
+    expect(screen.getByText(/first = 'Abe604'/)).toBeInTheDocument();
+  });
+
+  it("an option chip shows the clean name but sends the original", async () => {
+    const picked: string[] = [];
+    render(<AnswerCard result={{ ...base, kind: "clarification", answer: "Which patient?", options: ["Abe604 Bode78"],
+      sql: [], table: null, timings: {} }} onOption={(o) => picked.push(o)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Abe Bode" }));
+    expect(picked).toEqual(["Abe604 Bode78"]);
+  });
+});
+
 describe("conversation (Plan 4)", () => {
   it("a clarifying question offers one-click options", async () => {
     const picked: string[] = [];

@@ -25,8 +25,8 @@ tables:
   claims_transactions: Line items of claims — charges, payments, adjustments, transfers.
 
 columns:
-  patients.first: First name (Synthea adds digits, e.g. "Abe604" — that is the real stored value).
-  patients.last: Last name (with digits, e.g. "Bode78").
+  patients.first: "First name; Synthea adds digits, e.g. 'Abe604' is the stored value. The website shows names without the digits, so people usually type them without (e.g. 'Abe Bode'): match with first LIKE 'Abe%', never first = 'Abe'."
+  patients.last: "Last name, with digits, e.g. 'Bode78'. Typed without the digits: match with last LIKE 'Bode%'."
   patients.deathdate: NULL means the patient is alive.
   patients.healthcare_expenses: Lifetime healthcare spending by the patient.
   patients.healthcare_coverage: Lifetime amount covered by insurers.
@@ -57,6 +57,7 @@ columns:
   claims_transactions.payments: "Amount paid, on rows with type = 'PAYMENT'."
   claims_transactions.outstanding: "Running balance of one line item. Do NOT sum it for totals owed — use claims.outstandingp (patient) or claims.outstanding1 / outstanding2 (insurers)."
   providers.speciality: Medical speciality of the provider.
+  providers.name: "Doctor's full name with Synthea digits, e.g. 'Emmaline88 Witting912'. Typed without the digits ('Emmaline Witting'): match with name LIKE 'Emmaline% Witting%'."
   payers.name: Insurer name (NO_INSURANCE means uninsured).
 
 terms:

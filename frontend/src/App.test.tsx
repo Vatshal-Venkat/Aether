@@ -93,6 +93,20 @@ describe("App", () => {
     expect(askChat.mock.calls[0][0]).toMatchObject({ role: "patient", patient_id: "p2" });
   });
 
+  it("patient picker shows names without the digits, and search works either way", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Patient" }));
+    const search = await screen.findByRole("searchbox", { name: "Search patients" });
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Angelyn HarrisF · 1970", "Miranda JacobsF · 1980"]);
+    await userEvent.type(search, "miranda jacobs");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await userEvent.clear(search);
+    await userEvent.type(search, "jacobs452");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await userEvent.click(screen.getAllByRole("option")[0]);
+    expect(screen.getByRole("button", { name: /Miranda Jacobs/ })).toBeInTheDocument();
+  });
+
   it("switching role clears the conversation and starts a new session", async () => {
     askChat.mockResolvedValue(answer("Answer one."));
     render(<App />);

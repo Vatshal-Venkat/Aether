@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPatients } from "../api/client";
 import type { Patient } from "../api/types";
+import { cleanNames } from "../lib/names";
 
 interface Props {
   patient: Patient | null;
@@ -32,7 +33,8 @@ export function PatientPicker({ patient, onSelect }: Props) {
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (patients ?? []).filter((p) => !q || p.name.toLowerCase().includes(q));
+    // Match the name as shown ("miranda jacobs") or as stored ("jacobs452").
+    return (patients ?? []).filter((p) => !q || cleanNames(p.name).toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
   }, [patients, query]);
 
   const choose = (p: Patient) => {
@@ -44,7 +46,7 @@ export function PatientPicker({ patient, onSelect }: Props) {
   return (
     <div className="picker" ref={root}>
       <button type="button" className="picker__button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className={patient ? "" : "picker__placeholder"}>{patient ? patient.name : "Choose a patient"}</span>
+        <span className={patient ? "" : "picker__placeholder"}>{patient ? cleanNames(patient.name) : "Choose a patient"}</span>
         <span className="picker__caret" aria-hidden>▾</span>
       </button>
       <AnimatePresence>
@@ -76,7 +78,7 @@ export function PatientPicker({ patient, onSelect }: Props) {
               {patients !== null && matches.length === 0 && <li className="picker__empty">No match.</li>}
               {matches.map((p) => (
                 <li key={p.id} role="option" aria-selected={patient?.id === p.id} className="picker__option" onClick={() => choose(p)}>
-                  <span>{p.name}</span>
+                  <span>{cleanNames(p.name)}</span>
                   <span className="picker__detail">{p.gender} · {p.birthdate.slice(0, 4)}</span>
                 </li>
               ))}

@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import type { ChatResult } from "../../api/types";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { renderMarkdown } from "../../lib/markdown";
+import { cleanNames } from "../../lib/names";
 import { AnswerOrb } from "../orbs/AnswerOrb";
 import { Disclosures, type Panel } from "./Disclosure";
 import { LabelList, type Owner, ResultTable, SqlList, Timeline } from "./details";
@@ -52,7 +53,7 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
 
   // Word-by-word reveal (the full text is in the page from the start). With "reduce motion" on, the answer
   // appears at once: no word spans at all (final review, Plan 4).
-  const blocks = renderMarkdown(cleanAnswer(result.answer, result.sources.length > 0), { reveal: !reduced });
+  const blocks = renderMarkdown(cleanNames(cleanAnswer(result.answer, result.sources.length > 0)), { reveal: !reduced });
   return (
     <article className="answer" data-kind={result.kind}>
       <AnswerOrb kind={result.kind} />
@@ -62,7 +63,7 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
           // How a follow-up was read ("how many of them..." -> the full question), so a wrong reading is visible.
           <p className="answer__understood">
             <span className="answer__understood-label">Understood as</span>
-            <span>{result.standalone_question}</span>
+            <span>{cleanNames(result.standalone_question)}</span>
           </p>
         )}
         <div className="answer__text">
@@ -113,7 +114,7 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
           <div className="answer__options">
             {result.options!.map((option) => (
               <button key={option} type="button" className="chip" disabled={!onOption} onClick={() => onOption?.(option)}>
-                {option}
+                {cleanNames(option)}
               </button>
             ))}
           </div>
