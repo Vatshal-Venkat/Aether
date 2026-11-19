@@ -380,6 +380,16 @@
   margin: 6px 0 4px;
 }
 
+/* A backup AI model wrote this answer: a small hairline alert above it. */
+.answer__notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: var(--hairline);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* "No" to "did you mean ...?": a quiet line inviting a new question. */
 .answer__declined {
   margin: 8px 0 0;

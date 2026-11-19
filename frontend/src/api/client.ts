@@ -3,7 +3,7 @@
 // sentence a person can read ("Can't reach the Aether backend...") instead of a raw HTTP code.
 // A cancelled request (we cancel when you switch role mid-question) is passed through untouched.
 
-import type { ChatRequest, ChatResult, Health, Patient, Progress, ResultPage, Role } from "./types";
+import type { ChatRequest, ChatResult, Health, ModelUsage, Patient, Progress, ResultPage, Role } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -120,6 +120,11 @@ export function getResultPage(resultId: string, page: number, role: Role, patien
 
 export function getPatients(): Promise<Patient[]> {
   return request<Patient[]>("/api/patients");
+}
+
+/** Each AI model's free daily allowance: available or resting, tokens left (the "model limits" panel). */
+export function getUsage(): Promise<ModelUsage[]> {
+  return request<ModelUsage[]>("/api/usage");
 }
 
 export function getHealth(): Promise<Health> {

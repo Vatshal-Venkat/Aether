@@ -97,6 +97,51 @@ def test_per_minute_limit_is_still_retried_on_the_same_model():
     assert main.calls == 2 and small.calls == 0
 
 
+def _usage_model(name, errors=()):
+    model = Model(name, errors)
+
+    def call(messages):
+        model.calls += 1
+        if model.errors:
+            raise model.errors.pop(0)
+        return AIMessage(name, usage_metadata={"input_tokens": 90, "output_tokens": 10, "total_tokens": 100})
+    return model, RunnableLambda(call, name=name)
+
+
+def test_chain_writes_usage_and_limits_to_the_ledger(tmp_path):
+    from app.llm.usage import UsageLedger
+    ledger = UsageLedger(tmp_path / "u.sqlite")
+    main, main_r = _usage_model("main", [_rate_limit(DAILY)])
+    small, small_r = _usage_model("small")
+    chain = build_chain([main_r, small_r], clock=Clock(), ledger=ledger)
+    chain.invoke("hi")
+    snap = {r["model"]: r for r in ledger.snapshot(["main", "small"], {})}
+    assert snap["main"]["status"] == "resting" and snap["main"]["used"] == 199868 and snap["main"]["exact"]
+    assert snap["small"]["used"] == 100 and snap["small"]["status"] == "available"
+
+
+def test_a_model_resting_in_the_ledger_is_skipped(tmp_path):
+    # The accuracy test (another process) hit the limit: the website's server skips that model straight away.
+    from app.llm.usage import UsageLedger
+    ledger = UsageLedger(tmp_path / "u.sqlite")
+    ledger.rest("main", seconds=600)
+    main, main_r = _usage_model("main")
+    small, small_r = _usage_model("small")
+    assert build_chain([main_r, small_r], clock=Clock(), ledger=ledger).invoke("hi").content == "small"
+    assert main.calls == 0
+
+
+def test_track_models_lists_who_answered():
+    from app.llm.client import track_models
+    main, main_r = _usage_model("main", [_rate_limit(DAILY)])
+    small, small_r = _usage_model("small")
+    chain = build_chain([main_r, small_r], clock=Clock())
+    with track_models() as used:
+        chain.invoke("one")
+        chain.invoke("two")
+    assert used == ["small", "small"]
+
+
 def test_daily_limit_message_says_how_long_to_wait():
     # Live (2026-11-19): every model was out; the website said "try again in a minute" — the real wait was ~12 min.
     msg = friendly_error(DailyLimitReached(DAILY.replace("7m36.6s", "11m48.04s")))

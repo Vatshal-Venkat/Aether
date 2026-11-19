@@ -41,6 +41,28 @@ def client(tmp_path):
     return c
 
 
+def test_usage_lists_every_model_with_its_remaining_allowance(tmp_path):
+    from app.llm.usage import UsageLedger
+    deps = make_deps(ScriptedLLM())
+    deps.models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "gemini-2.5-flash"]
+    deps.usage = UsageLedger(tmp_path / "u.sqlite")
+    deps.usage.record("openai/gpt-oss-120b", 50_000)
+    deps.usage.rest("openai/gpt-oss-20b", seconds=300)
+    app = create_app(with_pipeline=False)
+    app.dependency_overrides[get_deps] = lambda: deps
+    rows = TestClient(app).get("/api/usage").json()
+    assert [r["name"] for r in rows] == ["gpt-oss-120b", "gpt-oss-20b", "gemini-2.5-flash"]
+    assert rows[0]["remaining"] == 150_000 and rows[0]["daily_limit"] == 200_000 and rows[0]["status"] == "available"
+    assert rows[1]["status"] == "resting" and 0 < rows[1]["back_in_s"] <= 300
+    assert rows[2]["daily_limit"] is None
+
+
+def test_usage_without_a_ledger_is_empty():
+    app = create_app(with_pipeline=False)
+    app.dependency_overrides[get_deps] = lambda: make_deps(ScriptedLLM())
+    assert TestClient(app).get("/api/usage").json() == []
+
+
 def test_chat_returns_result(client):
     resp = client.post("/api/chat", json={"message": "How many patients?", "role": "clinician"})
     assert resp.status_code == 200

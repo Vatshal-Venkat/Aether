@@ -26,7 +26,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.memory.store import ConversationStore, Turn
 from app.rag.store import DrugLabelStore
-from app.llm.client import LLMOutputError, _transient_errors, daily_limit_rest, get_chat_model
+from app.llm.client import (MODELS_USED_KEY, LLMOutputError, _transient_errors, chat_models, daily_limit_rest,
+                            get_chat_model, model_name, usage_ledger)
 from app.semantic.glossary import load_glossary
 
 log = logging.getLogger(__name__)
@@ -59,14 +60,18 @@ class ChatResult(BaseModel):
     unverified_numbers: list[str] = []
     documents: list[DocumentRef] = []
     timings: dict[str, float] = {}
+    model_notice: str | None = None  # "gpt-oss-120b has used up its free daily limit, so ... the backup model ..."
 
 
 def build_deps(settings: Settings) -> Deps:
     engines: dict[DbName, object] = {"clinical": get_engine("clinical"), "billing": get_engine("billing")}
     glossary = load_glossary()
+    ledger = usage_ledger(settings)
     return Deps(
         settings=settings,
-        llm=get_chat_model(settings),
+        llm=get_chat_model(settings, ledger),
+        models=[model_name(m) for m in chat_models(settings)],
+        usage=ledger,
         catalog=build_catalog(engines, glossary),
         glossary=glossary,
         engines=engines,
@@ -88,19 +93,47 @@ def is_rate_limit(exc: Exception) -> bool:
     return getattr(response, "status_code", None) == 429
 
 
-def friendly_error(exc: Exception) -> str:
+def _short(model: str) -> str:
+    return model.split("/")[-1]  # "openai/gpt-oss-120b" -> "gpt-oss-120b"
+
+
+def _minutes(seconds: float) -> str:
+    minutes = max(1, math.ceil(seconds / 60))
+    return f"{minutes} minute{'s' if minutes > 1 else ''}"
+
+
+def model_notice(deps: Deps, used: list[str]) -> str | None:
+    """Tell the person when a backup model wrote (part of) the answer — and why."""
+    if not deps.models:
+        return None
+    main = deps.models[0]
+    backups = [m for m in dict.fromkeys(used) if m != main]
+    if not backups:
+        return None
+    why = ("has used up its free daily limit" if deps.usage and deps.usage.resting_until(main)
+           else "was unavailable")
+    return f"{_short(main)} {why}, so this answer came from the backup model {' and '.join(map(_short, backups))}."
+
+
+def friendly_error(exc: Exception, deps: Deps | None = None) -> str:
     """Pick a message that points the user in the right direction. Only a real rate limit says
     "rate-limited": the accuracy report counts those questions as "not run" instead of wrong."""
     if isinstance(exc, LLMOutputError):
         return "The AI gave a reply I couldn't use. Please try again, or try rephrasing your question."
     if isinstance(exc, SQLAlchemyError):
         return "The database is unavailable right now. Please try again shortly."
+    if is_rate_limit(exc) and deps and deps.usage and deps.models:
+        backs = [deps.usage.resting_until(m) for m in deps.models]
+        if all(backs):  # every model is resting: say so, and when the first one is back
+            soonest = min(backs) - deps.usage.clock()
+            names = ", ".join(map(_short, deps.models))
+            return (f"All {len(deps.models)} AI models ({names}) have used up their free daily allowance. "
+                    f"The first one is back in about {_minutes(soonest)}.")
     if is_rate_limit(exc):
         rest = daily_limit_rest(exc)  # every model is out for the day: say when the main one is back
         if rest is not None:
-            minutes = max(1, math.ceil(rest / 60))
             return ("The AI service is rate-limited right now: the free daily allowance is used up. "
-                    f"Try again in about {minutes} minute{'s' if minutes > 1 else ''}.")
+                    f"Try again in about {_minutes(rest)}.")
         return "The AI service is rate-limited right now (free-tier limit). Please try again in a minute."
     if isinstance(exc, _transient_errors()):
         return "The AI service is unavailable right now. Please try again in a minute."
@@ -130,12 +163,14 @@ def _remember(deps: Deps, question: str, role: str, patient_id: str | None, sess
 
 
 def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, session_id: str) -> ChatResult:
+    used: list[str] = []  # every AI model that answered a step of this question
     try:
-        final = build_graph(deps).invoke(_initial_state(deps, question, role, patient_id, session_id))
-        result = _package(final)
+        final = build_graph(deps).invoke(_initial_state(deps, question, role, patient_id, session_id),
+                                         config={"configurable": {MODELS_USED_KEY: used}})
+        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used)})
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         _log_failure(exc)
-        result = ChatResult(kind="error", answer=friendly_error(exc))
+        result = ChatResult(kind="error", answer=friendly_error(exc, deps))
     _remember(deps, question, role, patient_id, session_id, result)
     return result
 
@@ -172,8 +207,10 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
     Plain English: instead of waiting in silence, the backend says "now writing SQL", "now querying
     billing_db"... so the website can show what is happening (the thinking orbs change rhythm)."""
     final: dict | None = None
+    used: list[str] = []  # every AI model that answered a step of this question
     try:
         stream = build_graph(deps).stream(_initial_state(deps, question, role, patient_id, session_id),
+                                          config={"configurable": {MODELS_USED_KEY: used}},
                                           stream_mode=["tasks", "values"])
         for mode, chunk in stream:
             if mode == "values":
@@ -183,10 +220,10 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
                 if chunk["name"] == "contextualize" and not step_input.get("history"):
                     continue  # nothing to recall: the step does nothing, so don't announce it
                 yield {"event": "progress", "data": _progress(chunk["name"], step_input)}
-        result = _package(final)
+        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used)})
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         _log_failure(exc)
-        result = ChatResult(kind="error", answer=friendly_error(exc))
+        result = ChatResult(kind="error", answer=friendly_error(exc, deps))
         _remember(deps, question, role, patient_id, session_id, result)
         yield {"event": "error", "data": {"message": result.answer}}
         return

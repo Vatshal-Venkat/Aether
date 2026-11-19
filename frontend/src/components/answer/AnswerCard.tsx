@@ -67,6 +67,10 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
     <article className="answer" data-kind={result.kind}>
       <AnswerOrb kind={result.kind} />
       <div className="answer__body">
+        {result.model_notice && (
+          // A backup AI model wrote this answer (the main one hit its daily limit): say so, plainly.
+          <p className="answer__notice" role="status" aria-label="Model notice">{result.model_notice}</p>
+        )}
         {KIND_LABEL[result.kind] && <p className="answer__kind">{KIND_LABEL[result.kind]}</p>}
         {result.standalone_question && (
           // How a follow-up was read ("how many of them..." -> the full question), so a wrong reading is visible.

@@ -46,7 +46,9 @@ export interface ChatResult {
   standalone_question?: string | null; // a follow-up rewritten as a full question
   options?: string[];
   /** Optional: the exact question each option sends ("" = send nothing; the person asks again). */
-  option_questions?: Record<string, string>;                  // a clarifying question's one-click answers
+  option_questions?: Record<string, string>;
+  /** Set when a backup AI model wrote the answer (the main one hit its daily limit). */
+  model_notice?: string | null;                  // a clarifying question's one-click answers
   cached?: boolean;                    // answered instantly from the answer cache
 }
 
@@ -62,6 +64,21 @@ export interface Patient {
   name: string;
   birthdate: string;
   gender: string;
+}
+
+/** One AI model's free daily allowance (GET /api/usage), in fallback order. */
+export interface ModelUsage {
+  model: string;
+  name: string;                         // "gpt-oss-120b"
+  role: "main" | "backup" | "last resort";
+  status: "available" | "resting";      // resting = hit its daily limit
+  back_in_s: number | null;
+  daily_limit: number | null;           // null = the provider doesn't say
+  used: number;                         // tokens in the last 24 hours
+  remaining: number | null;
+  exact: boolean;                       // the provider's own figure (else our count)
+  complete: boolean;                    // our count covers the full 24 hours (else earlier use is missing)
+  counting_since: number;               // when counting started (seconds since 1970)
 }
 
 export interface Health {

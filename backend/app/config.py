@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     memory_path: Path = BACKEND_DIR / "data" / "memory.sqlite"
     memory_turns: int = 3
 
+    # AI allowance logbook (tokens per model, last 24 h) for the website's "model limits" panel, and the
+    # known free daily token limits (Groq states them in its limit messages; these are the defaults).
+    usage_path: Path = BACKEND_DIR / "data" / "usage.sqlite"
+    daily_token_limits: dict[str, int] = {"openai/gpt-oss-120b": 200_000, "openai/gpt-oss-20b": 200_000}
+
     # Service habits (Plan 5): audit log, answer cache, result pages, rate limit, AI queue
     audit_path: Path = BACKEND_DIR / "data" / "audit.sqlite"
     enable_audit_api: bool = False   # GET /api/audit shows every patient's questions: off unless you turn it on

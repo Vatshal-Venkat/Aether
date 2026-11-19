@@ -137,6 +137,19 @@ describe("cleanAnswer keeps real content (final review)", () => {
   });
 });
 
+describe("backup model notice", () => {
+  it("shows a small alert when a backup AI model wrote the answer", () => {
+    render(<AnswerCard result={{ ...base, model_notice: "gpt-oss-120b has used up its free daily limit, so this answer came from the backup model gpt-oss-20b." }} />);
+    const alert = screen.getByRole("status", { name: "Model notice" });
+    expect(alert).toHaveTextContent("backup model gpt-oss-20b");
+  });
+
+  it("shows nothing when the main model answered", () => {
+    render(<AnswerCard result={base} />);
+    expect(screen.queryByRole("status", { name: "Model notice" })).toBeNull();
+  });
+});
+
 describe("names without Synthea's random digits", () => {
   const named: ChatResult = {
     ...base,

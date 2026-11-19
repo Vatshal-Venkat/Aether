@@ -17,6 +17,8 @@ import logging
 import re
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TypeVar
 
 from langchain_core.language_models import BaseChatModel
@@ -27,6 +29,7 @@ from pydantic import BaseModel, ValidationError
 log = logging.getLogger(__name__)
 
 from app.config import Settings
+from app.llm.usage import UsageLedger, limit_numbers
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -64,22 +67,63 @@ def daily_limit_rest(exc: BaseException) -> float | None:
     return min(h * 3600 + mins * 60 + secs, MAX_REST_S)
 
 
-def _resting(model: Runnable, name: str, clock: Callable[[], float]) -> Runnable:
-    """Wrap a model so a daily-limit error becomes DailyLimitReached and the model rests until it's back."""
+MODELS_USED_KEY = "aether_models_used"
+_models_used: ContextVar[list[str] | None] = ContextVar(MODELS_USED_KEY, default=None)
+
+
+@contextmanager
+def track_models():
+    """Collect the name of every model that answered inside this block (one entry per AI call)."""
+    used: list[str] = []
+    token = _models_used.set(used)
+    try:
+        yield used
+    finally:
+        _models_used.reset(token)
+
+
+def _tokens(reply) -> int:
+    usage = getattr(reply, "usage_metadata", None) or {}
+    if usage.get("total_tokens"):
+        return int(usage["total_tokens"])
+    meta = (getattr(reply, "response_metadata", None) or {}).get("token_usage") or {}
+    return int(meta.get("total_tokens") or 0)
+
+
+def _resting(model: Runnable, name: str, clock: Callable[[], float], ledger: "UsageLedger | None" = None) -> Runnable:
+    """Wrap a model so a daily-limit error becomes DailyLimitReached and the model rests until it's back.
+    With a ledger, tokens and limits are written down (and a rest set by another process is respected)."""
     state = {"until": 0.0}
 
     def call(messages, config):
-        if clock() < state["until"]:
+        if clock() < state["until"] or (ledger and ledger.resting_until(name)):
             raise DailyLimitReached(f"{name} is resting (daily allowance used up)")
         try:
-            return model.invoke(messages, config)
+            reply = model.invoke(messages, config)
         except Exception as exc:
             rest = daily_limit_rest(exc)
             if rest is None:
                 raise
             state["until"] = clock() + rest
+            if ledger:
+                ledger.rest(name, rest)
+                if numbers := limit_numbers(str(exc)):
+                    ledger.report(name, *numbers)
             log.warning("%s: daily allowance used up; using the next model for %.0f s", name, rest)
             raise DailyLimitReached(str(exc)) from exc
+        # Who answered: the pipeline passes a list in its run settings (works across threads, e.g. streaming);
+        # track_models() covers direct calls.
+        sink = ((config or {}).get("configurable") or {}).get(MODELS_USED_KEY)
+        if sink is None:
+            sink = _models_used.get()
+        if sink is not None:
+            sink.append(name)
+        if ledger and (tokens := _tokens(reply)):
+            try:
+                ledger.record(name, tokens)
+            except Exception:  # noqa: BLE001 — bookkeeping must never cost the user an answer
+                log.warning("could not record token usage for %s", name, exc_info=True)
+        return reply
 
     return RunnableLambda(call, name=f"resting:{name}")
 
@@ -146,20 +190,26 @@ def chat_models(settings: Settings) -> list[BaseChatModel]:
     return models
 
 
-def _model_name(model) -> str:
-    return getattr(model, "model_name", None) or getattr(model, "model", None) or getattr(model, "name", None) or "model"
+def model_name(model) -> str:
+    name = getattr(model, "model_name", None) or getattr(model, "model", None) or getattr(model, "name", None)
+    return str(name or "model").removeprefix("models/")
 
 
-def build_chain(models: list[Runnable], clock: Callable[[], float] = time.monotonic) -> Runnable:
+def build_chain(models: list[Runnable], clock: Callable[[], float] = time.monotonic,
+                ledger: "UsageLedger | None" = None) -> Runnable:
     """Each model retries short limits; a daily limit skips to the next model (which may be resting too)."""
     retry = dict(retry_if_exception_type=_transient_errors(), stop_after_attempt=4, wait_exponential_jitter=True)
-    chain = [_resting(m, _model_name(m), clock).with_retry(**retry) for m in models]
+    chain = [_resting(m, model_name(m), clock, ledger).with_retry(**retry) for m in models]
     return chain[0].with_fallbacks(chain[1:]) if len(chain) > 1 else chain[0]
 
 
-def get_chat_model(settings: Settings) -> Runnable:
+def usage_ledger(settings: Settings) -> UsageLedger:
+    return UsageLedger(settings.usage_path)
+
+
+def get_chat_model(settings: Settings, ledger: UsageLedger | None = None) -> Runnable:
     """The selected provider's models, then every other provider that has a key, as fallbacks."""
-    return build_chain(chat_models(settings))
+    return build_chain(chat_models(settings), ledger=ledger)
 
 
 def _content(message) -> str:

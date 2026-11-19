@@ -83,6 +83,17 @@ async def chat_stream(req: ChatRequest, deps: Deps = Depends(get_deps), runner=D
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@router.get("/usage")
+def model_usage(deps: Deps = Depends(get_deps)) -> list[dict]:
+    """Each AI model in fallback order (main, backup, last resort): available or resting (and for how long),
+    and its free daily tokens used / left over the last 24 hours. "exact" = the provider's own figure;
+    otherwise our own count (the provider doesn't publish what's left until the limit is hit)."""
+    if deps.usage is None or not deps.models:
+        return []
+    rows = deps.usage.snapshot(deps.models, deps.settings.daily_token_limits)
+    return [{**r, "name": r["model"].split("/")[-1]} for r in rows]
+
+
 @router.get("/sessions/{session_id}")
 def session_history(session_id: str, role: Literal["clinician", "patient"], patient_id: str | None = None,
                     deps: Deps = Depends(get_deps)) -> list[dict]:

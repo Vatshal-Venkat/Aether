@@ -7,6 +7,7 @@ import { StatusOrb } from "./orbs/StatusOrb";
 import { PatientPicker } from "./PatientPicker";
 import { RolePill } from "./RolePill";
 import { ThemeToggle } from "./ThemeToggle";
+import { UsageMenu } from "./UsageMenu";
 
 interface Props {
   role: Role;
@@ -30,6 +31,7 @@ export function TopBar({ role, patient, onRole, health, healthError, theme, onTh
       </div>
       <div className="topbar__end">
         <StatusOrb health={health} error={healthError} />
+        <UsageMenu />
         <ThemeToggle theme={theme} onToggle={onTheme} />
       </div>
     </header>
