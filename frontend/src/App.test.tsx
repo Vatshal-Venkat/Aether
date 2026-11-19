@@ -120,6 +120,14 @@ describe("App", () => {
     expect(screen.getByText("No match.")).toBeInTheDocument();
   });
 
+  it("an AI limit is labelled as such, not as a connection problem", async () => {
+    askChat.mockRejectedValue(new client.ApiError(500, "The AI service is rate-limited right now (free-tier limit). Try again in about 12 minutes."));
+    render(<App />);
+    await ask("Which medicine has the highest risk?");
+    expect(await screen.findByText("AI limit reached")).toBeInTheDocument();
+    expect(screen.queryByText("Connection problem")).toBeNull();
+  });
+
   it("switching role clears the conversation and starts a new session", async () => {
     askChat.mockResolvedValue(answer("Answer one."));
     render(<App />);

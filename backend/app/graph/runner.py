@@ -7,6 +7,7 @@ If the AI service is down or rate-limited, you get a friendly message instead of
 """
 
 import logging
+import math
 from collections.abc import Iterator
 
 from pydantic import BaseModel
@@ -25,7 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.memory.store import ConversationStore, Turn
 from app.rag.store import DrugLabelStore
-from app.llm.client import LLMOutputError, _transient_errors, get_chat_model
+from app.llm.client import LLMOutputError, _transient_errors, daily_limit_rest, get_chat_model
 from app.semantic.glossary import load_glossary
 
 log = logging.getLogger(__name__)
@@ -95,6 +96,11 @@ def friendly_error(exc: Exception) -> str:
     if isinstance(exc, SQLAlchemyError):
         return "The database is unavailable right now. Please try again shortly."
     if is_rate_limit(exc):
+        rest = daily_limit_rest(exc)  # every model is out for the day: say when the main one is back
+        if rest is not None:
+            minutes = max(1, math.ceil(rest / 60))
+            return ("The AI service is rate-limited right now: the free daily allowance is used up. "
+                    f"Try again in about {minutes} minute{'s' if minutes > 1 else ''}.")
         return "The AI service is rate-limited right now (free-tier limit). Please try again in a minute."
     if isinstance(exc, _transient_errors()):
         return "The AI service is unavailable right now. Please try again in a minute."
@@ -128,10 +134,18 @@ def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, sessi
         final = build_graph(deps).invoke(_initial_state(deps, question, role, patient_id, session_id))
         result = _package(final)
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
-        log.exception("chat pipeline failed")
+        _log_failure(exc)
         result = ChatResult(kind="error", answer=friendly_error(exc))
     _remember(deps, question, role, patient_id, session_id, result)
     return result
+
+
+def _log_failure(exc: Exception) -> None:
+    """A rate limit is expected on the free tier: one warning line. Anything else: the full traceback."""
+    if is_rate_limit(exc):
+        log.warning("chat pipeline stopped: every AI model is rate-limited (%s)", str(exc).splitlines()[0][:160])
+    else:
+        log.exception("chat pipeline failed")
 
 
 # Steps worth telling the website about (bookkeeping steps like next_step are skipped).
@@ -171,7 +185,7 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
                 yield {"event": "progress", "data": _progress(chunk["name"], step_input)}
         result = _package(final)
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
-        log.exception("chat pipeline failed")
+        _log_failure(exc)
         result = ChatResult(kind="error", answer=friendly_error(exc))
         _remember(deps, question, role, patient_id, session_id, result)
         yield {"event": "error", "data": {"message": result.answer}}

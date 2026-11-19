@@ -60,7 +60,7 @@ export function Conversation({ messages, pending, progress, role, owner, locked,
               <article className="answer" data-kind="error">
                 <AnswerOrb kind="error" />
                 <div className="answer__body">
-                  <p className="answer__kind">Connection problem</p>
+                  <p className="answer__kind">{/rate-limited|allowance/i.test(m.text ?? "") ?"AI limit reached" : "Connection problem"}</p>
                   <p className="answer__text">{m.text}</p>
                 </div>
               </article>

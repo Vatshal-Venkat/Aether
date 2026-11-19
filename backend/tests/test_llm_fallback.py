@@ -97,6 +97,28 @@ def test_per_minute_limit_is_still_retried_on_the_same_model():
     assert main.calls == 2 and small.calls == 0
 
 
+def test_daily_limit_message_says_how_long_to_wait():
+    # Live (2026-11-19): every model was out; the website said "try again in a minute" — the real wait was ~12 min.
+    msg = friendly_error(DailyLimitReached(DAILY.replace("7m36.6s", "11m48.04s")))
+    assert "rate-limited" in msg and "about 12 minutes" in msg and "in a minute" not in msg
+
+
+def test_rate_limit_is_logged_in_one_line_without_a_traceback(caplog):
+    from app.graph.runner import run_chat
+    from tests.fakes import ScriptedLLM, make_deps
+
+    class OutOfAllowance(ScriptedLLM):
+        def invoke(self, *args, **kwargs):
+            raise DailyLimitReached(DAILY)
+
+    with caplog.at_level("WARNING"):
+        result = run_chat(make_deps(OutOfAllowance()), "How many patients?", "clinician", None, "s")
+    assert result.kind == "error" and "rate-limited" in result.answer
+    records = [r for r in caplog.records if r.name == "app.graph.runner"]
+    assert records and all(r.exc_info is None for r in records)
+    assert "rate-limited" in records[0].getMessage()
+
+
 def test_when_every_model_is_out_the_user_sees_the_rate_limit_message():
     main, small = Model("main", [_rate_limit(DAILY)]), Model("small", [_rate_limit(DAILY.replace("120b", "20b"))])
     chain = build_chain([main.runnable(), small.runnable()], clock=Clock())
