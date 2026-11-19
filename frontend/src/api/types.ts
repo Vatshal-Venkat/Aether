@@ -44,7 +44,9 @@ export interface ChatResult {
   timings: Record<string, number>;
   route?: string | null;
   standalone_question?: string | null; // a follow-up rewritten as a full question
-  options?: string[];                  // a clarifying question's one-click answers
+  options?: string[];
+  /** Optional: the exact question each option sends ("" = send nothing; the person asks again). */
+  option_questions?: Record<string, string>;                  // a clarifying question's one-click answers
   cached?: boolean;                    // answered instantly from the answer cache
 }
 

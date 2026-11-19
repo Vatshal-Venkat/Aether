@@ -43,6 +43,7 @@ columns:
   observations.type: "'numeric' or 'text' — says how to read value."
   observations.category: "laboratory, vital-signs, survey, social-history, exam, procedure, therapy, imaging."
   observations.units: Unit of the value (e.g. %, mg/dL, mm[Hg], kg).
+  medications.description: "Drug name and strength, e.g. 'amLODIPine 2.5 MG Oral Tablet'. One ROW per prescription period: long-term drugs are renewed again and again (one patient has 222 rows of the same drug). So 'how many medications' / 'most medications' means different medicines: COUNT(DISTINCT description), not COUNT(*)."
   medications.stop: NULL means the medication is still active.
   medications.code: RxNorm drug code.
   medications.totalcost: Total cost of all dispenses of this prescription.

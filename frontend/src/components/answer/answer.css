@@ -380,6 +380,14 @@
   margin: 6px 0 4px;
 }
 
+/* "No" to "did you mean ...?": a quiet line inviting a new question. */
+.answer__declined {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted, currentColor);
+  opacity: 0.8;
+}
+
 /* ---- Plan 5: paging ---- */
 .result__more {
   margin-top: 10px;

@@ -221,6 +221,17 @@
   must_contain: [[diarrhea], [nausea, vomiting]]
   source_prefix: "openFDA label: Metformin"
 
+- id: RG06
+  category: rag
+  role: clinician
+  question: What are the side effects of metfromin?
+  expect_kind: clarification
+  expect_route: clarify
+  must_contain: [[metformin]]
+  note: >
+    Added 2026-11-19. A misspelled medicine is never guessed: Aether asks "Did you mean metformin?" (Yes / No),
+    found by trigram similarity in code — no extra AI call.
+
 - id: RG02
   category: rag
   role: clinician

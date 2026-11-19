@@ -21,6 +21,7 @@ from app.graph.state import ChatState, RouteDecision
 from app.graph.timing import timed
 from app.llm.client import ask_json
 from app.llm.prompts import route_system
+from app.search.spelling import suggest_drug_spelling
 
 
 def names_another_patient(question: str, patient_names: dict[str, str], self_id: str | None,
@@ -58,4 +59,12 @@ def route(state: ChatState, deps: Deps) -> dict:
         decision = decision.model_copy(update={"databases": ["clinical"]})
     if decision.kind == "hybrid":  # a person's medicines live in clinical_db; labels are looked up afterwards
         decision = decision.model_copy(update={"databases": ["clinical"]})
+    if decision.kind in ("rag", "hybrid") and deps.store is not None:
+        # A misspelled medicine ("metfromin"): ask "did you mean metformin?" instead of guessing. Checked on what
+        # the person typed — a follow-up rewrite may already have quietly "fixed" it.
+        typed = state.get("original_question") or state["question"]
+        if (s := suggest_drug_spelling(typed, deps.store.drug_names(), correct=state["question"])):
+            decision = RouteDecision(kind="clarify", reason=f"possible misspelling of a medicine: {s.word}",
+                                     clarify_question=s.question, options=list(s.option_questions),
+                                     option_questions=s.option_questions)
     return {"route": decision}

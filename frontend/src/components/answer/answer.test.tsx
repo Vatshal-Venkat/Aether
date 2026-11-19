@@ -181,6 +181,26 @@ describe("conversation (Plan 4)", () => {
     expect(picked).toEqual(["Insurers"]);
   });
 
+  it("'did you mean?' — Yes sends the corrected question", async () => {
+    const sent: string[] = [];
+    const result = { ...base, kind: "clarification" as const, answer: "Did you mean metformin?", options: ["Yes", "No"],
+      option_questions: { Yes: "What are the side effects of metformin?", No: "" }, sql: [], table: null, timings: {} };
+    render(<AnswerCard result={result} onOption={(o) => sent.push(o)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(sent).toEqual(["What are the side effects of metformin?"]);
+  });
+
+  it("'did you mean?' — No sends nothing and invites a new question", async () => {
+    const sent: string[] = [];
+    const result = { ...base, kind: "clarification" as const, answer: "Did you mean metformin?", options: ["Yes", "No"],
+      option_questions: { Yes: "What are the side effects of metformin?", No: "" }, sql: [], table: null, timings: {} };
+    render(<AnswerCard result={result} onOption={(o) => sent.push(o)} />);
+    await userEvent.click(screen.getByRole("button", { name: "No" }));
+    expect(sent).toEqual([]);
+    expect(screen.getByText(/ask your question again/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeDisabled();
+  });
+
   it("shows how a follow-up was understood", () => {
     render(<AnswerCard result={{ ...base, standalone_question: "How many female patients have diabetes?" }} />);
     expect(screen.getByText("Understood as")).toBeInTheDocument();

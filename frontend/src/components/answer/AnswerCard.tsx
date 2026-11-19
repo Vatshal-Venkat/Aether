@@ -4,6 +4,7 @@
 // the data, they're listed in a note — never hidden.
 
 import { motion } from "motion/react";
+import { useState } from "react";
 import type { ChatResult } from "../../api/types";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { renderMarkdown } from "../../lib/markdown";
@@ -35,7 +36,15 @@ export function cleanAnswer(text: string, hasSources: boolean): string {
 
 export function AnswerCard({ result, onOption, owner }: { result: ChatResult; onOption?: (option: string) => void; owner?: Owner }) {
   const reduced = useReducedMotion();
-  const total = Object.values(result.timings).reduce((a, b) => a + b, 0);
+  const [declined, setDeclined] = useState(false);
+  // An option may carry the exact question it sends ("Yes" -> "...side effects of metformin?"); "" means it sends
+  // nothing ("No" to "did you mean metformin?") — the person simply asks again. Without a mapping, the label is sent.
+  const choose = (option: string) => {
+    const question = result.option_questions?.[option];
+    if (question === "") setDeclined(true);
+    else onOption?.(question ?? option);
+  };
+  const total =Object.values(result.timings).reduce((a, b) => a + b, 0);
   const tables = result.sources.filter((s) => !s.startsWith("openFDA label:"));
   const labelCount = result.sources.length - tables.length;
   const meta = [...tables, ...(labelCount ? [`${labelCount} FDA label${labelCount > 1 ? "s" : ""}`] : [])];
@@ -113,12 +122,13 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
         {result.kind === "clarification" && (result.options?.length ?? 0) > 0 && (
           <div className="answer__options">
             {result.options!.map((option) => (
-              <button key={option} type="button" className="chip" disabled={!onOption} onClick={() => onOption?.(option)}>
+              <button key={option} type="button" className="chip" disabled={!onOption || declined} onClick={() => choose(option)}>
                 {cleanNames(option)}
               </button>
             ))}
           </div>
         )}
+        {declined && <p className="answer__declined">No problem — ask your question again.</p>}
         <Disclosures panels={panels} />
       </div>
     </article>

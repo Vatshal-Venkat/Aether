@@ -23,6 +23,9 @@ class RouteDecision(BaseModel):
     drugs: list[str] = []  # medicine names the router saw in the question (for drug-label lookups)
     clarify_question: str = ""  # kind "clarify": the short question to ask back
     options: list[str] = []     # kind "clarify": 2-4 likely answers the person can click
+    # Optional: the exact question each option sends ("" = sends nothing; the person asks again). Used by the
+    # "did you mean metformin?" spelling check, so a click asks the corrected question word for word.
+    option_questions: dict[str, str] = {}
 
 
 class SqlAttempt(TypedDict, total=False):

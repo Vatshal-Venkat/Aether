@@ -7,6 +7,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getPatients } from "../api/client";
 import type { Patient } from "../api/types";
 import { cleanNames } from "../lib/names";
+import { similarity } from "../lib/trigram";
+
+const FUZZY_MIN = 0.3; // trigram score below which two names are different names
+const FUZZY_MAX = 5;   // at most this many "closest matches"
 
 interface Props {
   patient: Patient | null;
@@ -31,10 +35,20 @@ export function PatientPicker({ patient, onSelect }: Props) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const matches = useMemo(() => {
+  // Exact text first (the name as shown, "miranda jacobs", or as stored, "jacobs452"). If nothing contains
+  // what was typed, fall back to the closest-sounding names by trigram score, so typos still find people.
+  const { matches, fuzzy } = useMemo(() => {
+    const all = patients ?? [];
     const q = query.trim().toLowerCase();
-    // Match the name as shown ("miranda jacobs") or as stored ("jacobs452").
-    return (patients ?? []).filter((p) => !q || cleanNames(p.name).toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+    const exact = all.filter((p) => !q || cleanNames(p.name).toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+    if (exact.length || q.length < 3) return { matches: exact, fuzzy: false };
+    const close = all
+      .map((p) => ({ p, score: similarity(q, cleanNames(p.name)) }))
+      .filter((s) => s.score >= FUZZY_MIN)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, FUZZY_MAX)
+      .map((s) => s.p);
+    return { matches: close, fuzzy: close.length > 0 };
   }, [patients, query]);
 
   const choose = (p: Patient) => {
@@ -76,6 +90,7 @@ export function PatientPicker({ patient, onSelect }: Props) {
               {failed && <li className="picker__empty">Couldn't load patients.</li>}
               {!failed && patients === null && <li className="picker__empty">Loading…</li>}
               {patients !== null && matches.length === 0 && <li className="picker__empty">No match.</li>}
+              {fuzzy && <li className="picker__empty" role="presentation">Closest matches</li>}
               {matches.map((p) => (
                 <li key={p.id} role="option" aria-selected={patient?.id === p.id} className="picker__option" onClick={() => choose(p)}>
                   <span>{cleanNames(p.name)}</span>

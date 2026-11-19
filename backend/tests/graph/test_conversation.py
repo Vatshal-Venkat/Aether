@@ -61,6 +61,22 @@ def test_clarification_result_with_options(engine, memory):
     assert memory.turns("s")[-1].kind == "clarification"
 
 
+class _Library:
+    def drug_names(self):
+        return ["metformin er 500 mg", "lisinopril"]
+
+
+def test_misspelled_medicine_end_to_end(engine, memory):
+    # One AI call (the router) and then a code-made "did you mean?" — no SQL, no label search, no answer drafting.
+    llm = ScriptedLLM('{"kind": "rag", "databases": [], "reason": "drug info"}')
+    deps = make_deps(llm, engines={"clinical": engine}, memory=memory, store=_Library())
+    result = run_chat(deps, "What are the side effects of metfromin?", "clinician", None, "s")
+    assert result.kind == "clarification" and result.answer == "Did you mean metformin?"
+    assert result.options == ["Yes", "No"]
+    assert result.option_questions == {"Yes": "What are the side effects of metformin?", "No": ""}
+    assert result.sql == [] and result.documents == []
+
+
 def test_clarification_then_choice(engine, memory):
     remember(memory, "What's the revenue?", "Revenue of what — a hospital or an insurance company?", kind="clarification")
     llm = ScriptedLLM(json.dumps({"standalone": "Which insurance company has the highest revenue?"}),

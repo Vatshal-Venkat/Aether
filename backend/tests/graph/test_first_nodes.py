@@ -14,6 +14,38 @@ PATIENT = {"role": "patient", "patient_id": "p-123"}
 
 
 # --- route -------------------------------------------------------------------------------
+class _Library:  # the drug-label library, as far as the spelling check needs it
+    def drug_names(self):
+        return ["metformin er 500 mg", "lisinopril", "metoprolol succinate"]
+
+
+def test_misspelled_medicine_asks_did_you_mean_before_anything_else():
+    llm = ScriptedLLM('{"kind": "rag", "databases": [], "reason": "drug info", "drugs": ["metformin"]}')
+    out = route({"question": "What are the side effects of metfromin?", **CLINICIAN}, make_deps(llm, store=_Library()))
+    decision = out["route"]
+    assert decision.kind == "clarify" and decision.clarify_question == "Did you mean metformin?"
+    assert decision.options == ["Yes", "No"]
+    assert decision.option_questions == {"Yes": "What are the side effects of metformin?", "No": ""}
+
+
+def test_spelling_is_checked_on_what_the_person_typed():
+    # A follow-up rewrite may already have "fixed" the spelling; the person still gets asked.
+    llm = ScriptedLLM('{"kind": "hybrid", "databases": ["clinical"], "reason": "my meds"}')
+    state = {"question": "Is my metformin safe with alcohol?", "original_question": "and my metfromin?", **PATIENT}
+    out = route(state, make_deps(llm, store=_Library()))
+    assert out["route"].kind == "clarify"
+    assert out["route"].option_questions["Yes"] == "Is my metformin safe with alcohol?"
+
+
+def test_spelling_check_only_for_drug_questions():
+    llm = ScriptedLLM('{"kind": "sql", "databases": ["clinical"], "reason": "records"}')
+    out = route({"question": "How many patients take metfromin?", **CLINICIAN}, make_deps(llm, store=_Library()))
+    assert out["route"].kind == "sql"
+    llm = ScriptedLLM('{"kind": "rag", "databases": [], "reason": "drug info"}')
+    out = route({"question": "Side effects of metformin?", **CLINICIAN}, make_deps(llm, store=_Library()))
+    assert out["route"].kind == "rag"
+
+
 def test_route_parses_decision():
     llm = ScriptedLLM('{"kind": "sql", "databases": ["clinical"], "reason": "lab results"}')
     out = route({"question": "How many patients?", **CLINICIAN}, make_deps(llm))

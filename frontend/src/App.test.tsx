@@ -107,6 +107,19 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Miranda Jacobs/ })).toBeInTheDocument();
   });
 
+  it("patient picker forgives spelling mistakes (closest names by trigram)", async () => {
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Patient" }));
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Search patients" }), "angelin haris");
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Angelyn Harris");
+    expect(screen.getByText("Closest matches")).toBeInTheDocument();
+    await userEvent.clear(screen.getByRole("searchbox", { name: "Search patients" }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search patients" }), "zzzz");
+    expect(screen.getByText("No match.")).toBeInTheDocument();
+  });
+
   it("switching role clears the conversation and starts a new session", async () => {
     askChat.mockResolvedValue(answer("Answer one."));
     render(<App />);

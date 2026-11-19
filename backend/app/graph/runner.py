@@ -50,6 +50,7 @@ class ChatResult(BaseModel):
     route: str | None = None   # what the router decided: sql / rag / hybrid / clarify / refuse / out_of_scope
     standalone_question: str | None = None  # a follow-up, rewritten as a full question ("Understood as: ...")
     options: list[str] = []    # a clarifying question's suggested answers (one click each on the website)
+    option_questions: dict[str, str] = {}  # optional: the exact question each option sends ("" = none, ask again)
     cached: bool = False       # answered instantly from the answer cache (Plan 5)
     sql: list[SqlRecord] = []
     sources: list[str] = []
@@ -187,6 +188,8 @@ def _package(final: dict) -> ChatResult:
         route=final["route"].kind if final.get("route") else None,
         standalone_question=final["question"] if final.get("original_question") else None,
         options=final["route"].options if final.get("route") and final.get("kind") == "clarification" else [],
+        option_questions=(final["route"].option_questions
+                          if final.get("route") and final.get("kind") == "clarification" else {}),
         # One record per try, on its own database; shows what really ran (with any row filter added).
         sql=[SqlRecord(db=a.get("db") or final.get("db", "clinical"), query=a.get("executed") or a["sql"],
                        error=a["error"]) for a in final.get("attempts") or []],

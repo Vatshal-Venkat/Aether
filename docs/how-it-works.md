@@ -604,6 +604,16 @@ wrong table. Checking it through the whole pipeline found four problems, all fix
 
 Two new exam questions (XD06, XD07) pin this down.
 
+**Spelling mistakes (trigram search, 19 Nov 2026).** Trigram matching cuts words into 3-letter pieces and scores
+how many pieces two spellings share, so a typo still lands close to the right word. It is used in two places only,
+where it costs nothing noticeable:
+- **Patient picker:** if nothing contains what you typed, the closest names are shown ("angelin haris" → Angelyn
+  Harris, under "Closest matches"). Runs in the browser.
+- **Medicine names:** a drug question with a word that is *almost* a medicine ("metfromin") is never guessed —
+  Aether asks "Did you mean metformin?" with Yes / No, or "Did you mean one of these: …?" with up to 3 names and
+  "None of these". Each option sends the corrected question word for word; No sends nothing ("ask your question
+  again"). Plain Python, ~0.5 ms, no AI call; checked on 100+ everyday words with no false alarms.
+
 **Checking the checker.** An independent review then tried to fool the marker, and found it could pass some wrong
 answers in future runs: "3.0" counted as 3.1; a date's "13" counted as the number 13; list numbering "8." counted as 8;
 "Medic" matched "Medicaid"; a ranking naming the wrong winner could pass if the right one appeared later; a leaked name
