@@ -79,6 +79,46 @@ def _exec(deps, sql):
     return execute({"db": "clinical", "final_sql": sql, "attempts": [_attempt(sql)], **CLINICIAN}, deps)
 
 
+def _tie_deps():
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE claims (patientid TEXT, outstandingp NUMERIC)"))
+        for pid, owed in [("a", 2313.07), ("b", 211.38), ("c", 42.28), ("d", 42.28), ("e", 42.28),
+                          ("f", 42.28), ("g", 42.28), ("h", 0)]:
+            conn.execute(text("INSERT INTO claims VALUES (:p, :o)"), {"p": pid, "o": owed})
+    return make_deps(ScriptedLLM(), engines={"billing": engine})
+
+
+def _exec_billing(deps, sql):
+    return execute({"db": "billing", "final_sql": sql, "attempts": [_attempt(sql)], **CLINICIAN}, deps)
+
+
+def test_execute_keeps_rows_tied_at_the_cut_off():
+    sql = ("SELECT patientid, SUM(outstandingp) AS total FROM claims GROUP BY patientid "
+           "ORDER BY total DESC LIMIT 5")
+    out = _exec_billing(_tie_deps(), sql)
+    result = out["result"]
+    assert result.total_rows == 7  # 2 clear leaders + all five patients owing 42.28 (LIMIT 5 kept only 3)
+    assert result.columns[-1] == "ranking"
+    assert [r[-1] for r in result.rows] == [1, 2, 3, 3, 3, 3, 3]
+    assert out["attempts"][-1]["executed"] and "RANK()" in out["attempts"][-1]["executed"]  # the panel shows it
+
+
+def test_execute_without_ties_keeps_the_original_result():
+    sql = "SELECT patientid, SUM(outstandingp) AS total FROM claims GROUP BY patientid ORDER BY total DESC LIMIT 2"
+    out = _exec_billing(_tie_deps(), sql)
+    assert out["result"].columns == ["patientid", "total"] and out["result"].total_rows == 2
+    assert not out["attempts"][-1].get("executed")
+
+
+def test_execute_falls_back_when_the_tie_query_fails(monkeypatch):
+    import app.graph.nodes.execute as ex
+    monkeypatch.setattr(ex, "with_ties", lambda sql, dialect: ("SELECT nope FROM nowhere", 5))
+    sql = "SELECT patientid, SUM(outstandingp) AS total FROM claims GROUP BY patientid ORDER BY total DESC LIMIT 5"
+    out = _exec_billing(_tie_deps(), sql)
+    assert out["result"].total_rows == 5 and out["attempts"][-1]["error"] is None
+
+
 def test_execute_returns_rows_and_sources(sqlite_deps):
     out = _exec(sqlite_deps, "SELECT first FROM patients WHERE id = 'p1'")
     assert out["result"].rows == [["Name1"]] and out["result"].columns == ["first"]

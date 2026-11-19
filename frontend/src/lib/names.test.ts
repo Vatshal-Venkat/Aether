@@ -12,6 +12,12 @@ describe("cleanNames", () => {
     );
   });
 
+  it("handles accented names", () => {
+    // Live: "Raúl937 Quintana711" kept its digits ("ú" is not an A-Z letter).
+    expect(cleanNames("Mr. Raúl937 Claudio123 Quintana711")).toBe("Mr. Raúl Claudio Quintana");
+    expect(cleanNames("Zoë42 Müller7 and Ángel3 Peña88")).toBe("Zoë Müller and Ángel Peña");
+  });
+
   it("handles apostrophes and hyphens in names", () => {
     expect(cleanNames("Mary12 O'Keefe54 and Ann3 Ward-Smith55")).toBe("Mary O'Keefe and Ann Ward-Smith");
   });

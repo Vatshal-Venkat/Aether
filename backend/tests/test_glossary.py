@@ -19,6 +19,23 @@ def test_name_hints_cover_names_typed_without_digits():
         assert "LIKE" in cols[key] and "without" in cols[key].lower(), key
 
 
+def test_stale_synthea_totals_point_to_the_real_records():
+    # Synthea's stored totals cover its whole simulation, not the rows we loaded: payers.covered_encounters says
+    # Medicaid paid for the most visits, the encounters table says Medicare (accuracy report 2026-11-19, XD03).
+    cols = load_glossary().columns
+    for key in ("payers.covered_encounters", "payers.covered_medications", "providers.encounters",
+                "organizations.utilization"):
+        assert key in cols and "do not use" in cols[key].lower(), key
+    assert "count" in cols["payers.covered_encounters"].lower() and "encounters" in cols["payers.covered_encounters"]
+
+
+def test_medication_counts_mean_different_medicines():
+    # Live (2026-11-19): "top 5 patients with most medications" counted prescription ROWS — Kendrick has 1,302
+    # rows (amlodipine renewed 222 times) but only 17 different medicines.
+    hint = load_glossary().columns["medications.description"]
+    assert "COUNT(DISTINCT" in hint and "renew" in hint.lower()
+
+
 def test_glossary_tables_match_split():
     assert set(load_glossary().tables) == set(TABLE_SPLIT)
 

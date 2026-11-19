@@ -63,6 +63,31 @@ def test_invented_money_flagged():
     assert check("Insurance paid $9,999.00 in total.", [[120.0]]) == ["$9,999.00"]
 
 
+def test_negative_numbers_keep_their_sign():
+    # Live (2026-11-19): "–20451.57" was read as +20451.57 and flagged although the data said -20451.57.
+    for minus in ("-", "−", "–"):  # hyphen, real minus sign, en dash
+        assert check(f"Balance: {minus}20,451.57", [[-20451.57]]) == []
+    assert check("Balance: -500.00", [[500.0]]) == ["-500.00"]  # a sign the data doesn't have is a new number
+
+
+def test_negative_value_described_in_words_is_fine():
+    assert check("They have a credit of 20,451.57.", [[-20451.57]]) == []
+
+
+def test_ranges_and_codes_are_not_negative_numbers():
+    assert check("Visits from 2019-2021.", [[2019], [2021]]) == []
+    assert check("Code E11-9 seen 4 times.", [["E11-9", 4]]) == []
+
+
+def test_rank_column_in_an_answer_table_is_not_checked():
+    # Live: the AI added a "Rank" column (1, 2, 3, 4) to its table; ranks are positions, not data.
+    answer = "| Rank | Patient | Amount owed |\n|---|---|---|\n| 1 | Ann | 2313.07 |\n| 2 | Bob | 211.38 |"
+    assert check(answer, [["Ann", 2313.07], ["Bob", 211.38]]) == []
+    assert check(answer.replace("211.38", "999.99"), [["Ann", 2313.07], ["Bob", 211.38]]) == ["999.99"]
+    for header in ("#", "No.", "Position"):
+        assert check(answer.replace("Rank", header), [["Ann", 2313.07], ["Bob", 211.38]]) == []
+
+
 def test_number_word_that_is_part_of_the_data_is_fine():
     # Found in Plan 2: a provider named "Dr Two" was flagged as the number 2.
     assert find_unverified_numbers("The doctor is Dr Two.", [["Dr Two"]], "Who is doctor d2?", set()) == []

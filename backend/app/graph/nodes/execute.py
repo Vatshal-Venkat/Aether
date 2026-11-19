@@ -15,17 +15,22 @@ The query runs through the driver's raw cursor with no parameters, so characters
 """
 
 import datetime as dt
+import logging
 import uuid
 from decimal import Decimal
 from typing import Any
 
 from app.db.engines import DB_LABEL
 from app.db.rls import set_query_context
+from app.db.ties import with_ties
 from app.graph.deps import Deps
 from app.graph.nodes.validate import DIALECTS
 from app.graph.state import ChatState, QueryResult
 from app.graph.timing import timed
 from app.safety.sql_validator import tables_in
+
+
+log = logging.getLogger(__name__)
 
 
 def json_safe(value: Any) -> Any:
@@ -67,6 +72,27 @@ def execute(state: ChatState, deps: Deps) -> dict:
         attempts[-1]["error"] = (f"Include the column {link.from_column} (from {link.from_table}) in the output, "
                                  "unaliased — the next step needs it to look up matching rows.")
         return {"attempts": attempts, "result": None}
+
+    tied = with_ties(state["final_sql"], DIALECTS[db])
+    if tied and len(raw_rows) == tied[1]:
+        # Exactly N rows from "ORDER BY ... LIMIT N": rows tied with the N-th may have been cut. Re-run keeping
+        # them (with a "ranking" column). If that fails for any reason, the original result stands.
+        try:
+            with engine.begin() as conn:
+                if engine.dialect.name == "postgresql":
+                    set_query_context(conn, state["role"], state.get("patient_id"))
+                cursor = conn.connection.cursor()
+                try:
+                    cursor.execute(tied[0])
+                    tie_columns = [d[0] for d in cursor.description]
+                    tie_rows = cursor.fetchmany(cap + 1)
+                finally:
+                    cursor.close()
+            if len(tie_rows) > len(raw_rows):  # only when ties really were cut off
+                columns, raw_rows = tie_columns, tie_rows
+                attempts[-1]["executed"] = tied[0]  # the SQL panel shows what really ran
+        except Exception:  # noqa: BLE001 — keeping ties is a nicety; never lose a correct answer over it
+            log.warning("tie-keeping query failed; keeping the original top-%d result", tied[1], exc_info=True)
 
     keep = [i for i, c in enumerate(columns) if c.lower() not in pii_names]
     rows = [[json_safe(r[i]) for i in keep] for r in raw_rows[:cap]]

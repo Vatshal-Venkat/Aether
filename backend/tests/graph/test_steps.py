@@ -91,6 +91,26 @@ def test_step2_notes_in_prompt():
     assert out["attempts"][-1]["step"] == 1 and out["attempts"][-1]["db"] == "billing"
 
 
+def test_step2_after_a_ranking_is_a_plain_lookup():
+    # Live (2026-11-19): "Which patient owes us the most? top 5" — step 1 summed the balances correctly; step 2
+    # invented its own "amount_owed" (lifetime expenses minus coverage) and the answer ranked by THAT.
+    llm = ScriptedLLM("SELECT id, name FROM providers")
+    state = {**_state(step=1, step_results=[_step1_result(["d1", "d2"])]), "schema_text": "TABLE providers"}
+    generate_sql(state, make_deps(llm))
+    prompt = llm.prompt_text()
+    assert "Step 1 already worked out: n" in prompt
+    assert "Do not compute any amount, count or ranking" in prompt and "no ORDER BY or LIMIT" in prompt
+
+
+def test_step2_after_ids_only_may_still_aggregate():
+    llm = ScriptedLLM("SELECT sum(outstandingp) FROM claims")
+    ids_only = StepResult(db="clinical", sql="SELECT provider ...", sources=["clinical_db.encounters"],
+                          result=QueryResult(columns=["provider"], rows=[["d1"]], total_rows=1, truncated=False))
+    generate_sql({**_state(step=1, step_results=[ids_only]), "schema_text": "x"}, make_deps(llm))
+    assert "already worked out" not in llm.prompt_text()
+    assert "for an overall total you may aggregate" in llm.prompt_text()
+
+
 def test_previous_errors_shown_only_for_this_step():
     llm = ScriptedLLM("SELECT id, name FROM providers")
     old = [{"step": 0, "db": "clinical", "sql": "SELECT bad0", "executed": None, "error": "step0 boom"}]

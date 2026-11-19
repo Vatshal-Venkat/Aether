@@ -183,6 +183,35 @@
     sql: "SELECT e.provider FROM encounters e JOIN patients p ON p.id = e.patient WHERE p.first = 'Angelyn934' ORDER BY e.start DESC LIMIT 1"
     then: {db: billing, sql: "SELECT name FROM providers WHERE id IN :prev"}
 
+- id: XD06
+  category: cross_db
+  role: clinician
+  question: Which patient owes us the most money? Give the name and the amount.
+  expect_route: sql
+  gold:
+    db: billing
+    sql: "SELECT patientid FROM claims GROUP BY patientid ORDER BY sum(outstandingp) DESC LIMIT 1"
+    then: {db: clinical, sql: "SELECT first, last FROM patients WHERE id IN :prev"}
+  must_contain: [["2313.07", "2,313.07"]]
+  note: >
+    Added 2026-11-19. The balance is in billing (claims.outstandingp), the name in clinical. A live run once had
+    the name-lookup step invent its own "amount owed" (lifetime expenses minus coverage, 523,747.56) and rank by it.
+
+- id: XD07
+  category: cross_db
+  role: clinician
+  question: Which patient owes us the most? Give the top 5.
+  expect_route: sql
+  gold:
+    db: billing
+    sql: "SELECT patientid FROM claims GROUP BY patientid ORDER BY sum(outstandingp) DESC LIMIT 2"
+    then: {db: clinical, sql: "SELECT first, last FROM patients WHERE id IN :prev"}
+  must_contain: [["2313.07", "2,313.07"], ["211.38"], [tie, tied, same amount, equal]]
+  must_not_contain: ["523747", "523,747"]
+  note: >
+    Added 2026-11-19 (the screenshot question). Top 2 are clear (2,313.07 and 211.38); after that at least five
+    patients share 42.28, so an honest "top 5" mentions the tie.
+
 # ---------------------------------------------------------------- FDA drug labels (RAG)
 - id: RG01
   category: rag

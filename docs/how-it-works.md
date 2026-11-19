@@ -584,6 +584,26 @@ After the fixes, every one of the 44 scored questions has been answered correctl
 (the free tier's limits), and the 38 first-pass successes were not re-asked after the fixes. A single clean full run is
 the next measurement worth taking.
 
+**Clean full run (19 Nov 2026, `gpt-oss-120b` only, backup models off):** **47 of 48 correct (98%)** — all 48 questions
+ran, routing 39/39, privacy 12/12, database questions 26/27, no SQL retries, median answer 9.9 s
+([report](eval/2026-11-19-1540-groq-openai_gpt-oss-120b.md)). The one miss taught us something about the data:
+
+| Found by the exam | What it was | Fixed |
+|---|---|---|
+| "Which insurer paid for the most visits?" → Medicaid (truth: Medicare, 1,111 visits) | The AI read Synthea's ready-made total `payers.covered_encounters` instead of counting visits. Those totals were computed over Synthea's whole simulation and **disagree with the records we loaded** — as do `covered_medications`, `providers.encounters` and `organizations.utilization` (the busiest doctor by the stored total is a different person from the busiest by actual visits). `unique_customers` does agree. | The glossary now marks those four columns "do not use — count the real rows". All 11 billing and cross-database questions re-run: 11/11 ([report](eval/2026-11-19-1558-groq-openai_gpt-oss-120b.md)). |
+
+**"Which patient owes us the most? Top 5" (19 Nov 2026).** A screenshot of this answer showed a warning box and a
+wrong table. Checking it through the whole pipeline found four problems, all fixed with tests:
+
+| Problem | Fix |
+|---|---|
+| Names live in one database, balances in the other. Step 2 (look up the names) invented its own "amount owed" — lifetime expenses minus insurance coverage — and the table ranked by that (523,747.56 at the top; the real top balance is 2,313.07). | When step 1 already worked out the figures, step 2 is told it is a plain lookup: no amounts, counts, ordering or LIMIT. The glossary also says what "owes us" means (`claims.outstandingp`, totals above 0). |
+| "Top 5" hid a tie: only 9 patients owe anything, and 7 of them owe exactly 42.28 — `LIMIT 5` silently kept 3 of the 7. | When an `ORDER BY … LIMIT N` query returns exactly N rows, code re-runs it keeping every row tied with the N-th (`RANK()`, plus a "ranking" column: 1, 2, 3, 3, 3, 3, 3, 3, 3). If that re-run fails, the original result stands. The answer step is then told plainly "rows 3–9 are tied — list them all and say so". |
+| The fact-checker flagged the table's rank numbers (1, 2, 3, 4) and a negative amount as "not in the data" — and each false alarm cost an extra AI rewrite. | A "Rank"/"#" column in an answer table is skipped; minus signs (-, −, –) count when attached to the number; a negative value may be described without its sign ("a credit of 20,451.57"). |
+| A negative balance was listed as "owing". | The answer rules say a negative balance is a credit, never money owed; if fewer rows qualify than asked, say how many. |
+
+Two new exam questions (XD06, XD07) pin this down.
+
 **Checking the checker.** An independent review then tried to fool the marker, and found it could pass some wrong
 answers in future runs: "3.0" counted as 3.1; a date's "13" counted as the number 13; list numbering "8." counted as 8;
 "Medic" matched "Medicaid"; a ranking naming the wrong winner could pass if the right one appeared later; a leaked name

@@ -8,9 +8,11 @@ For drug questions the AI also gets the FDA label passages, fenced off as refere
 must cite them ("openFDA label: Lisinopril — Side effects").
 """
 
+import re
+
 from app.db.engines import DB_LABEL
 from app.graph.deps import Deps
-from app.graph.state import ChatState
+from app.graph.state import ChatState, QueryResult
 from app.graph.timing import timed
 from app.llm.client import ask_text
 from app.llm.prompts import RAG_RULES
@@ -24,6 +26,10 @@ Rules:
 - If the results were truncated, say the list is partial.
 - Do not show internal ID columns (long codes like 007a32fb-33a3-...) unless the user asked for IDs;
   show names, dates and descriptions instead.
+- Money: a negative balance or amount owed is a credit (overpaid), not money owed — never list it as owing.
+  If fewer rows qualify than the user asked for, say how many do.
+- Rankings: rank by the measure the question asks about, in the order given. If rows are tied (the same
+  value, especially at the end of a "top N" list), say that they are tied instead of implying an order.
 - Do not give medical advice; describe the data."""
 
 # Live test: a router miss let a patient ask about someone else; the database (correctly) returned only
@@ -40,6 +46,29 @@ NOTHING_IN_LABELS = "I couldn't find anything about that in the FDA drug labels 
 
 LONG_LIST = 15   # more rows than this: summarise instead of listing
 LONG_LIST_SAMPLE = 10
+
+
+TOP_N = re.compile(r"\b(?:top|first|best|highest|largest|biggest|lowest|bottom)\s+(\d{1,3})\b", re.IGNORECASE)
+
+
+def tie_note(question: str, result: QueryResult) -> str | None:
+    """The user asked for the top N but more rows came back because rows tie at the cut-off (the query keeps
+    them on purpose, see app/db/ties.py): say so plainly, so the answer lists them all and calls them tied."""
+    m = TOP_N.search(question)
+    n = int(m.group(1)) if m else 0
+    rows = result.rows
+    if not n or len(rows) <= n:
+        return None
+    for c in range(len(result.columns) - 1, -1, -1):  # the measure is usually last (or the "ranking" column)
+        value = rows[n - 1][c]
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and rows[n][c] == value:
+            first = next(i for i in range(n) if rows[i][c] == value) + 1
+            last = max(i for i in range(len(rows)) if rows[i][c] == value) + 1
+            shown = value if result.columns[c].lower() != "ranking" else f"rank {value}"
+            return (f"The user asked for the top {n}, but {len(rows)} rows are shown because rows {first}-{last} are "
+                    f"tied ({result.columns[c]} = {shown}). List every row and say clearly that rows {first}-{last} "
+                    "are tied, instead of cutting the list or implying an order between them.")
+    return None
 
 
 def _results_table(state: ChatState, limit: int) -> str:
@@ -77,6 +106,8 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
             f"Results ({result.total_rows} rows{', TRUNCATED' if result.truncated else ''}; showing {shown}):\n"
             f"{_results_table(state, limit)}\n\n"
         )
+    if result is not None and (note := tie_note(state["question"], result)):
+        user += f"Note: {note}\n\n"
     if result is not None and result.total_rows == 0 and chunks:
         # Final review: without this, "What is my amoxicillin used for?" from someone who never took it
         # could get "Your amoxicillin is used for…".

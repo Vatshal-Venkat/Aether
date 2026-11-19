@@ -6,6 +6,39 @@ from app.graph.state import QueryResult
 from tests.fakes import ScriptedLLM, make_deps
 
 
+def test_answer_rules_cover_credits_and_ties():
+    # Live (2026-11-19): a "top 5 who owe us" table listed a negative balance as owing, and hid a 5-way tie.
+    from app.graph.nodes.synthesize import SYSTEM
+    assert "negative balance" in SYSTEM and "credit" in SYSTEM
+    assert "tied" in SYSTEM
+
+
+def test_tie_note_spells_out_a_tie_at_the_cut_off():
+    # Live (20b, 2026-11-19): 9 rows came back for "top 5" (7 tied at 42.28) but the answer listed 5, no tie.
+    from app.graph.nodes.synthesize import tie_note
+    rows = [["a", 2313.07], ["b", 211.38]] + [[c, 42.28] for c in "cdefghi"]
+    result = QueryResult(columns=["patientid", "total_owed"], rows=rows, total_rows=9, truncated=False)
+    note = tie_note("Which patient owes us the most? give top 5", result)
+    assert note and "top 5" in note and "9 rows" in note and "rows 3-9" in note and "42.28" in note
+    assert tie_note("Which patient owes us the most? give top 9", result) is None   # nothing was added
+    assert tie_note("Which patients owe us money?", result) is None                 # no "top N" asked
+    no_tie = QueryResult(columns=["p", "n"], rows=[["a", 3], ["b", 2], ["c", 1]], total_rows=3, truncated=False)
+    assert tie_note("top 2 please", no_tie) is None                                 # extra rows, but no tie
+
+
+def test_tie_note_reaches_the_prompt():
+    rows = [["a", 5], ["b", 4], ["c", 4], ["d", 4]]
+    state = {**_state(rows, columns=("name", "n")), "question": "Top 2 doctors by visits?"}
+    llm = ScriptedLLM("a has 5; b, c and d are tied with 4.\nSource: clinical_db.patients")
+    synthesize(state, make_deps(llm))
+    assert "rows 2-4" in llm.prompt_text() and "tied" in llm.prompt_text()
+
+
+def test_sql_rules_keep_ties_in_top_n():
+    from app.llm.prompts import sql_system
+    assert "RANK()" in sql_system("PostgreSQL", "clinician")
+
+
 def _state(rows, columns=("n",)):
     return {
         "question": "How many patients are there?",

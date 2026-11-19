@@ -45,12 +45,21 @@ def link_notes(state: ChatState) -> list[str]:
     previous = state["step_results"][0].result
     n = len({str(r[i]) for r in previous.rows for i, c in enumerate(previous.columns)
              if c.lower() == link.from_column.lower() and r[i] is not None})
-    return [f"Code will automatically keep only {link.to_table} rows whose {link.to_column} is one of the "
-            f"{n} values found in step 1. Do not filter on {link.to_column} yourself. Step 1 already applied "
-            "the question's conditions (which patients, doctors, diagnoses...): do not repeat them here — every "
-            f"{link.to_table} row you will see already belongs to the question. Include "
-            f"{link.to_table}.{link.to_column} unaliased if you return one row per item; for an overall "
-            "total you may aggregate."]
+    notes = [f"Code will automatically keep only {link.to_table} rows whose {link.to_column} is one of the "
+             f"{n} values found in step 1. Do not filter on {link.to_column} yourself. Step 1 already applied "
+             "the question's conditions (which patients, doctors, diagnoses...): do not repeat them here — every "
+             f"{link.to_table} row you will see already belongs to the question. Include "
+             f"{link.to_table}.{link.to_column} unaliased if you return one row per item; for an overall "
+             "total you may aggregate."]
+    # Step 1 already produced the figures (a "rank, then look up names" plan): step 2 is only a lookup.
+    # Live (2026-11-19): asked who owes the most, step 2 invented "amount_owed = expenses - coverage" and the
+    # answer ranked by it instead of step 1's real balances.
+    measures = [c for c in previous.columns if c.lower() != link.from_column.lower()]
+    if measures:
+        notes.append(f"Step 1 already worked out: {', '.join(measures)} — those figures and their order are kept "
+                     "by code. This step is a plain lookup of descriptive details (names, descriptions, dates) for "
+                     f"those {n} rows. Do not compute any amount, count or ranking, and use no ORDER BY or LIMIT.")
+    return notes
 
 
 def hybrid_notes(state: ChatState) -> list[str]:
