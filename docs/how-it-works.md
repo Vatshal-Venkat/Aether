@@ -386,6 +386,68 @@ A layer now sits around the pipeline (`backend/app/service.py`), the way a real 
   - **Detection:** the checker step also tests every "peak / highest / lowest / the most / fewest" claim against the
     whole table. A wrong claim gets one rewrite; if it is still wrong, it is shown as a warning.
   - **Result:** live re-run → "a peak of 502 in 2021". The question is now in the accuracy test (CL13).
+- **Rows are not patients** (`backend/app/safety/row_meaning.py`).
+  - **The problem:** "How many patients have diabetes?" → 8. The follow-up "show their names" returned one row per
+    patient *per diabetes-related diagnosis* (diabetes, kidney disease, neuropathy...): 19 rows for the same
+    8 people. The answer said "19 patients".
+  - **SQL writer:** a question about patients must now return one row per patient, with any details combined into
+    one column.
+  - **Answer writer:** when patients repeat across rows, code tells it "these 19 rows cover only 8 different
+    patients".
+  - **Checker:** "N patients", where N is the number of rows rather than the number of patients, is rewritten once,
+    then flagged.
+  - **Result:** live re-run → 8 and 8 names. Added to the accuracy test as CV05.
+- **Saved queries: the same question always gives the same result** (`backend/app/memory/saved_queries.py`).
+  - **The problem:** the AI wrote the SQL afresh every time, at temperature 0, but still not perfectly repeatable.
+    The filter wording and the row shape varied between runs and between the main and backup models, so the same
+    question could give different results on different days.
+  - **The fix:** the first time a question gets a clean answer, its route, plan and SQL are saved. Asking it again
+    (any case, spacing or punctuation) **runs exactly that SQL**, so it gives the same numbers. Only the wording of
+    the answer is written fresh. It is also faster: no AI call for routing or SQL.
+  - **Follow-ups:** "show their names" is saved under *previous question + what was typed*, together with the AI's
+    rewrite of it, so the "Understood as" line is the same too.
+  - **Safety:**
+    - saved SQL still passes every check (validation, privacy filter);
+    - it is stored before the patient filter is added;
+    - patient-mode SQL that names the patient is never saved.
+  - **Freshness:**
+    - only clean answers are saved;
+    - questions about "now" (today, last month, this year) are never saved;
+    - a saved query that stops working is rewritten and replaced;
+    - changing the glossary or the AI's rules automatically retires all saved queries;
+    - `python -m scripts.forget_saved_queries` clears them by hand.
+  - **The website** shows "same query as before" under such answers. The accuracy test switches saved queries off,
+    so it still measures the AI writing SQL fresh.
+  - **Live check:** 3 separate conversations of "How many patients have diabetes?" → "show their names" ran
+    identical SQL and returned identical rows every time.
+- **Reworded questions match too.** A small local model (all-MiniLM-L6-v2, the same one the drug-label library
+  uses) scores how alike two questions are.
+  - **Why code also checks the words:** a score alone isn't safe. Measured, "How many patients **do not** have
+    diabetes?" scored 0.912 and "How many **female** patients have diabetes?" 0.891, while the real rewording
+    "number of diabetic patients" scored only 0.876.
+  - **Never the same question:** a negation, an opposite (most/fewest, male/female, alive/dead), a number, or a time
+    word ("last year") differs.
+  - **Same question, reused silently:** the same meaningful words once wording is evened out ("how many / number
+    of", "people / patients", "diabetic / diabetes"). It shows **"Understood as: How many patients have diabetes?"**
+    and "same query as before".
+  - **Not sure:** Aether asks **"I've answered a very similar question before: '…' Do you mean the same thing?"**
+    **Yes** reuses it; **No** answers fresh and never asks again.
+  - **Patient mode:** only that patient's own earlier questions are offered.
+  - **Live:** "How many people have diabetes?", "number of diabetic patients" and "How many patients are
+    diabetic?" all reused the saved query (8). "…female patients…" was asked about. "…do not have diabetes?" was
+    answered fresh (103).
+- **Aether asks instead of assuming** (decided 2026-11-20).
+  - The router now clarifies whenever it is not sure what the person means: two readings, a vague word
+    ("expensive", "sickest"), or an unclear "him/that".
+  - **Enforced by code:** the router must also list anything it would have to *assume* about the person's meaning.
+    If it lists anything, code asks "To answer this I'd have to assume: high blood pressure = hypertension
+    diagnosis. Is that what you mean?" **Yes** runs it with the assumption spelled out; **No** lets them rephrase.
+  - Data definitions (died = a death date is set) are not assumptions, so clear questions are still answered
+    directly. Live: "died", "alive", "most common diagnosis" were answered; "expensive claims", "sickest patients"
+    and "high blood pressure" were asked about.
+  - **Also fixed:**
+    - dates the AI writes with typographic hyphens (`2018‑11‑05T09:10:23`) no longer trigger false number warnings;
+    - an empty AI reply is retried once, then replaced by a plain message.
 
 ## 5. What happens when you ask a question
 

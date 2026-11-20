@@ -68,12 +68,19 @@ Choose "kind":
   (e.g. "what are the side effects of metformin?"). Answered from the drug labels.
 - "hybrid": needs a person's records AND drug labels (e.g. "side effects of the medications I'm taking",
   "do any of patient X's drugs have a boxed warning?"). Set "databases" to ["clinical"].
-- "clarify": ONLY when the question is genuinely ambiguous and you cannot pick a clearly most likely meaning
-  (e.g. "what's the revenue?" — of a hospital? of an insurer?), or too vague to act on ("show me the data",
-  "what about him?" with nothing to refer to). Set "clarify_question" to one short question, "options" to 2-4 short
-  likely answers, and "option_questions" to the complete question each option stands for, e.g.
+- "clarify": whenever you are not sure what the user means — never guess. Ask when the question has two or more
+  reasonable readings that would give different answers ("what's the revenue?" — of a hospital? of an insurer?),
+  uses a vague term you would have to interpret ("recent", "expensive", "high", "sick"), names someone or something
+  unclear ("what about him?" with nothing to refer to), or is too vague to act on ("show me the data").
+  Set "clarify_question" to one short question, "options" to 2-4 short likely answers, and "option_questions" to the
+  complete question each option stands for, e.g.
   {{"Hospitals": "Which hospital has the highest revenue?", "Insurers": "Which insurance company has the highest revenue?"}}.
-  If one reading is clearly most likely, answer it instead (kind "sql").
+  Do not ask when the question has one clear meaning — answer it.
+Set "assumptions" to what you would have to assume about what the USER MEANS, in short "word = meaning" form
+(e.g. "expensive = the highest total claim cost", "recent = the last 12 months"). Only meanings the user would want
+to decide — not how the data is stored: which column or table to use, or terms the data defines plainly
+(e.g. "died" = deathdate is set, "alive" = deathdate is empty, "diabetes" = a diabetes diagnosis) are NOT assumptions.
+Leave it empty when nothing is assumed — including when the question already states its meaning, e.g. in brackets.
 - "out_of_scope": not answerable from this data (weather, general chit-chat, coding help, personal medical advice).
 - "refuse": not allowed for this user (see rules below).
 {patient_rules}
@@ -139,6 +146,9 @@ Rules:
 - Use the glossary hints for medical terms.
 - "Top N" / "most" questions: order by the measure, and keep rows tied with the N-th value, e.g. RANK() OVER
   (ORDER BY total DESC) AS rnk in a subquery, then WHERE rnk <= N ORDER BY rnk.
+- A question about patients ("which patients", "their names", "list the patients with X") returns ONE row per patient:
+  GROUP BY the patient and, if details help, combine them into one column (PostgreSQL string_agg(DISTINCT ..., '; '),
+  MySQL GROUP_CONCAT(DISTINCT ... SEPARATOR '; ')). Never one row per diagnosis or visit — that repeats patients.
 {DIALECT_NOTES.get(dialect_name, "")}
 - Today's date is {date.today().isoformat()}.{patient_note}
 Reply with only the SQL in a ```sql code block."""

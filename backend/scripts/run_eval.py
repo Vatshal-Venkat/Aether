@@ -151,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
     admin = {"clinical": create_engine(s.clinical_url(admin=True)), "billing": create_engine(s.billing_url(admin=True))}
     with admin["clinical"].connect() as conn:
         people = {f"{first} {last}": pid for pid, first, last in conn.execute(text("SELECT id, first, last FROM patients"))}
-    deps = build_deps(s)
+    # The accuracy test measures the AI writing SQL fresh: no saved queries are reused or saved.
+    deps = build_deps(s.model_copy(update={"saved_queries": False}))
     model = {"groq": s.groq_model, "gemini": s.gemini_model, "ollama": s.ollama_model}[s.llm_provider]
     started = dt.datetime.now()
 

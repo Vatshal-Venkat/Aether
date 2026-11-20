@@ -19,6 +19,7 @@ from app.graph.timing import timed
 from app.llm.client import ask_text
 from app.llm.prompts import RAG_RULES
 from app.safety.extremes import extremes_note
+from app.safety.row_meaning import distinct_note
 
 SYSTEM = """You answer questions about healthcare data using ONLY the query results provided.
 Rules:
@@ -47,6 +48,7 @@ UNKNOWN_DRUG = ("I don't have the FDA label for that medicine in this library â€
                 "that appear in our patient records.")
 NOTHING_IN_LABELS = "I couldn't find anything about that in the FDA drug labels in this library."
 
+EMPTY_REPLY = "I found the results but couldn't write a summary this time. The full table is attached below."
 LONG_LIST = 15   # more rows than this: summarise instead of listing
 LONG_LIST_SAMPLE = 10
 
@@ -112,6 +114,8 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
     if result is not None and (len(result.rows) > shown or result.truncated) and (facts := extremes_note(result)):
         user += (f"{facts}\nYou see only {shown} of the rows: state any highest, lowest, peak or trend only from these "
                  "computed facts, never from the rows shown.\n\n")
+    if result is not None and (rows_note := distinct_note(result)):  # "19 rows cover only 8 different patients"
+        user += f"{rows_note}\n\n"
     if result is not None and (note := tie_note(state["question"], result)):
         user += f"Note: {note}\n\n"
     if result is not None and result.total_rows == 0 and chunks:
@@ -132,7 +136,10 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
     if correction:
         user += f"\n\n{correction}"
     system = SYSTEM + (PATIENT_RULES if state.get("role") == "patient" else "") + (RAG_RULES if chunks else "")
-    return ask_text(deps.llm, system, user)
+    answer = ask_text(deps.llm, system, user)
+    if not answer.strip():  # live (2026-11-20): the AI's reply was empty â€” try once more
+        answer = ask_text(deps.llm, system, user)
+    return answer.strip() or EMPTY_REPLY
 
 
 @timed("synthesize")

@@ -158,3 +158,37 @@ def test_verify_flags_a_wrong_peak_that_survives_the_rewrite():
     state = {**_state(VISIT_ROWS, columns=("year", "visits")), "answer": "Visits peaked at 382 in 2018."}
     out = verify_numbers(state, make_deps(llm))
     assert out["unverified_numbers"] == ["382 (called the highest; the highest visits is 502)"]
+
+
+# --- rows are not patients (live 2026-11-20: 19 diagnosis rows of 8 people were called "19 patients") ------------
+def test_sql_rules_ask_for_one_row_per_patient():
+    from app.llm.prompts import sql_system
+    assert "ONE row per patient" in sql_system("PostgreSQL", "clinician")
+
+
+def test_the_answer_writer_is_told_rows_are_not_patients():
+    rows = [["p1", "Ann", "Diabetes"], ["p1", "Ann", "Neuropathy"], ["p2", "Bob", "Diabetes"]]
+    llm = ScriptedLLM("2 patients: Ann and Bob.\nSource: clinical_db.conditions")
+    synthesize(_state(rows, columns=("patient_id", "first", "condition")), make_deps(llm))
+    assert "3 rows cover only 2 different patients" in llm.prompt_text()
+
+
+def test_verify_rewrites_rows_called_patients():
+    rows = [["p1", "Ann", "Diabetes"], ["p1", "Ann", "Neuropathy"], ["p2", "Bob", "Diabetes"]]
+    llm = ScriptedLLM("2 patients have diabetes: Ann and Bob.")
+    state = {**_state(rows, columns=("patient_id", "first", "condition")), "answer": "3 patients have diabetes."}
+    out = verify_numbers(state, make_deps(llm))
+    assert out["answer"] == "2 patients have diabetes: Ann and Bob." and out["unverified_numbers"] == []
+    assert "cover 2 different patients" in llm.prompt_text()
+
+
+def test_an_empty_ai_reply_is_retried_once():
+    # Live (2026-11-20): the answer came back empty.
+    llm = ScriptedLLM("", "There are 3.\nSource: clinical_db.patients")
+    out = synthesize(_state([[3]]), make_deps(llm))
+    assert out["answer"].startswith("There are 3.")
+
+
+def test_two_empty_replies_give_a_plain_message_not_nothing():
+    out = synthesize(_state([[3]]), make_deps(ScriptedLLM("", "  ")))
+    assert "table" in out["answer"].lower() and out["answer"].strip()

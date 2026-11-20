@@ -114,6 +114,14 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
                 <span>{s}</span>
               </span>
             ))}
+            {result.saved_query && !result.cached && (
+              <>
+                {meta.length > 0 && <span className="answer__sep"> · </span>}
+                <span title="Asked before: Aether ran the same SQL as the first time, so the numbers stay the same.">
+                  same query as before
+                </span>
+              </>
+            )}
             {result.cached && (
               <>
                 {meta.length > 0 && <span className="answer__sep"> · </span>}

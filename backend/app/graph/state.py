@@ -26,6 +26,9 @@ class RouteDecision(BaseModel):
     # Optional: the exact question each option sends ("" = sends nothing; the person asks again). Used by the
     # "did you mean metformin?" spelling check, so a click asks the corrected question word for word.
     option_questions: dict[str, str] = {}
+    # Anything the router would have to assume or interpret to answer ("expensive = highest total cost"). Code turns
+    # a non-empty list into a question to the person: Aether asks instead of assuming (decided 2026-11-20).
+    assumptions: list[str] = []
 
 
 class SqlAttempt(TypedDict, total=False):
@@ -34,6 +37,7 @@ class SqlAttempt(TypedDict, total=False):
     sql: str               # what the AI wrote
     executed: str | None   # what actually ran, if code added a row filter
     error: str | None
+    saved: bool            # True: reused from a saved query, not written by the AI this time
 
 
 class QueryResult(BaseModel):
@@ -105,4 +109,5 @@ class ChatState(TypedDict, total=False):
     rag_problem: str | None        # "no_index" | "unknown_drug" | "missing_section" | None
     rag_message: str               # the fixed answer for "missing_section"
     rag_note: str                  # what retrieve checked (medicines, section, gaps) — shown to the AI
+    saved_query: Any               # a SavedQuery (app/memory/saved_queries.py) reused for this question, or None
     timings: Annotated[dict[str, float], merge_dicts]

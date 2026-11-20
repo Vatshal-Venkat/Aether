@@ -7,6 +7,8 @@ we never silently show an invented figure.
 
 It also checks claims about the extremes: a number called the peak / highest / lowest must be that, over ALL the
 rows (app/safety/extremes.py) — live, "a peak of 382 in 2018" passed the number check (382 is real) but 2021 had 502.
+And "N patients" must count patients, not rows (app/safety/row_meaning.py) — live, 19 diagnosis rows of 8 people
+were called "19 patients".
 """
 
 from datetime import date
@@ -17,6 +19,7 @@ from app.graph.state import ChatState
 from app.graph.timing import timed
 from app.safety.extremes import wrong_extremes
 from app.safety.number_check import find_unverified_numbers
+from app.safety.row_meaning import different_patients, wrong_patient_counts
 
 
 def _unverified(answer: str, state: ChatState) -> list[str]:
@@ -29,11 +32,14 @@ def _unverified(answer: str, state: ChatState) -> list[str]:
     extra = {float(date.today().year), float(len(state.get("chunks") or []))}
     if result:
         extra |= {float(result.total_rows), float(len(result.rows))}
+        if (n := different_patients(result)) is not None:  # "8 patients" from 19 rows of 8 people is right
+            extra.add(float(n))
     return find_unverified_numbers(answer, rows, state["question"], extra)
 
 
 def _problems(answer: str, state: ChatState) -> tuple[list[str], list[str]]:
-    return _unverified(answer, state), wrong_extremes(answer, state.get("result"))
+    result = state.get("result")
+    return _unverified(answer, state), wrong_extremes(answer, result) + wrong_patient_counts(answer, result)
 
 
 def _correction(bad: list[str], wrong: list[str]) -> str:
@@ -42,8 +48,9 @@ def _correction(bad: list[str], wrong: list[str]) -> str:
         parts.append(f"Your previous answer contained numbers not present in the results: {', '.join(bad)}. "
                      "Rewrite it using only numbers from the results.")
     if wrong:
-        parts.append(f"Your previous answer called a value the highest or lowest when it isn't: {'; '.join(wrong)}. "
-                     "Rewrite it with the correct highest and lowest values over all the rows.")
+        parts.append(f"Your previous answer made claims the results don't support: {'; '.join(wrong)}. "
+                     "Rewrite it with the correct highest / lowest values over all the rows, and count patients, "
+                     "not rows.")
     return " ".join(parts)
 
 

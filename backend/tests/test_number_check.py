@@ -92,3 +92,10 @@ def test_number_word_that_is_part_of_the_data_is_fine():
     # Found in Plan 2: a provider named "Dr Two" was flagged as the number 2.
     assert find_unverified_numbers("The doctor is Dr Two.", [["Dr Two"]], "Who is doctor d2?", set()) == []
     assert find_unverified_numbers("Seven patients", [["Dr Two"]], "q", set()) == ["Seven"]
+
+
+def test_dates_written_with_non_breaking_hyphens_and_seconds_are_fine():
+    # Live (2026-11-20): the AI wrote "2018‑11‑05T09:10:23" (U+2011 hyphens); the seconds were flagged as made up.
+    rows = [["2018-11-05T09:10:23", 20437.07]]
+    answer = "The largest claim (20437.07) was on 2018\u201111\u201105T09:10:23 and 2018\u201011\u201005."
+    assert find_unverified_numbers(answer, rows, "q", set()) == []

@@ -54,7 +54,9 @@ def normalize_plan(raw: QueryPlan, databases: list[DbName], glossary: Glossary,
 @timed("plan")
 def plan(state: ChatState, deps: Deps) -> dict:
     databases = list(dict.fromkeys(state["route"].databases or ["clinical"]))
-    if len(databases) == 1:
+    if (saved := state.get("saved_query")) is not None:  # asked before: the same steps as last time
+        steps, link = saved.plan, saved.link
+    elif len(databases) == 1:
         steps, link = [PlanStep(db=databases[0], goal=state["question"])], None
     else:
         raw = ask_json(deps.llm, plan_system(deps.glossary.links), state["question"], QueryPlan)

@@ -91,6 +91,14 @@ def generate_sql(state: ChatState, deps: Deps) -> dict:
     else:
         question = state["question"]
     attempts = list(state.get("attempts") or [])
+    saved = state.get("saved_query")
+    reuse = next((s for s in saved.sql if s.step == state.get("step", 0) and s.db == db), None) if saved else None
+    if reuse is not None and not step_attempts(state):
+        # Asked before: run exactly the same SQL as last time (it still goes through every check). If it fails,
+        # the retry below is written by the AI as usual.
+        attempts.append({"step": state.get("step", 0), "db": db, "sql": reuse.sql, "executed": None, "error": None,
+                         "saved": True})
+        return {"attempts": attempts, "db": db}
     reply = ask_text(
         deps.llm,
         sql_system(DIALECT_NAMES[db], state["role"]),

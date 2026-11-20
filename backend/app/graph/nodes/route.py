@@ -21,6 +21,8 @@ from app.graph.state import ChatState, RouteDecision
 from app.graph.timing import timed
 from app.llm.client import ask_json
 from app.llm.prompts import route_system
+from app.memory.saved_queries import (ASSUME_ASK, GO_AHEAD, NO, SIMILAR_ASK, SOMETHING_ELSE, YES,
+                                      assumption_accepted, similar_ask_reply, with_assumptions)
 from app.search.spelling import suggest_drug_spelling
 
 
@@ -54,10 +56,35 @@ def route(state: ChatState, deps: Deps) -> dict:
     if state["role"] == "patient" and any(names_another_patient(q, deps.patient_names, state.get("patient_id"),
                                                                 deps.provider_names) for q in asked if q):
         return {"route": RouteDecision(kind="refuse", reason="names another patient (checked by code)")}
+    saved = state.get("saved_query")
+    if saved is None and deps.saved_queries is not None:
+        saved = deps.saved_queries.get(state["role"], state["question"])
+    if saved is not None:
+        # Asked before and answered cleanly: same route, same plan, same SQL -> same numbers (saved_queries.py).
+        return {"route": saved.route, "saved_query": saved}
+    typed = state.get("original_question") or state["question"]
+    if deps.saved_queries is not None and similar_ask_reply(state.get("history") or [], typed) != "no":
+        owner = state.get("patient_id") if state["role"] == "patient" else None  # patients: only their own questions
+        match = deps.saved_queries.similar(state["role"], state["question"], owner=owner)
+        if match is not None and match.kind == "same":  # a very close rewording: same SQL, said how it was read
+            return {"route": match.query.route, "saved_query": match.query, "question": match.question,
+                    "original_question": typed}
+        if match is not None:  # similar, but not sure: ask instead of assuming
+            return {"route": RouteDecision(kind="clarify", reason=f"similar to a saved question ({match.score})",
+                                           clarify_question=SIMILAR_ASK.format(match.question), options=[YES, NO],
+                                           option_questions={YES: match.question, NO: typed})}
     decision = ask_json(deps.llm, route_system(state["role"]), state["question"], RouteDecision)
     if decision.kind == "clarify":  # keep only full questions for options actually offered
         decision = decision.model_copy(update={"option_questions": {
             o: q.strip() for o, q in decision.option_questions.items() if o in decision.options and q.strip()}})
+    if (decision.kind in ("sql", "hybrid", "rag") and decision.assumptions
+            and not assumption_accepted(state.get("history") or [], typed)):
+        # The router would have to assume something the person didn't say: ask them instead of guessing.
+        said = "; ".join(a.strip().rstrip(".") for a in decision.assumptions if a.strip())
+        return {"route": RouteDecision(kind="clarify", reason=f"would have to assume: {said}",
+                                       clarify_question=ASSUME_ASK.format(said), options=[GO_AHEAD, SOMETHING_ELSE],
+                                       option_questions={GO_AHEAD: with_assumptions(typed, [said]),
+                                                         SOMETHING_ELSE: ""})}
     if decision.kind == "sql" and not decision.databases:
         decision = decision.model_copy(update={"databases": ["clinical"]})
     if decision.kind == "hybrid":  # a person's medicines live in clinical_db; labels are looked up afterwards

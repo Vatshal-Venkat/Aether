@@ -317,3 +317,9 @@ describe("charts, CSV export and one-click suggestions", () => {
     expect(onOption).toHaveBeenCalledWith("How many patients are there?");
   });
 });
+
+it("says when the same SQL as last time was reused (so the numbers match)", () => {
+  render(<AnswerCard result={{ ...base, saved_query: true }} />);
+  expect(screen.getByText("same query as before")).toBeInTheDocument();
+  expect(screen.getByText("same query as before")).toHaveAttribute("title", expect.stringMatching(/same SQL/));
+});

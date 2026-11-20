@@ -192,3 +192,52 @@ def test_out_of_scope_offers_example_questions(engine, memory, role, patient, ex
     llm = ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "weather"}')
     result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), "Weather today?", role, patient, "s")
     assert result.kind == "out_of_scope" and expected in result.options and len(result.options) == 3
+
+
+def test_router_asks_instead_of_guessing_when_unsure():
+    # Decided 2026-11-20: when Aether isn't sure what a question means, it asks the person — it doesn't assume.
+    from app.llm.prompts import route_system
+    for role in ("clinician", "patient"):
+        rules = route_system(role)
+        assert "not sure" in rules and "never guess" in rules.lower()
+        assert "ONLY when the question is genuinely ambiguous" not in rules
+
+
+EXPENSIVE = "Show me the expensive claims"
+ASSUMING = json.dumps({"kind": "sql", "databases": ["clinical"], "reason": "claims",
+                       "assumptions": ["expensive = the highest total claim cost"]})
+
+
+def test_a_question_that_needs_an_assumption_is_asked_back_not_guessed(engine, memory):
+    result = run_chat(make_deps(ScriptedLLM(ASSUMING), engines={"clinical": engine}, memory=memory),
+                      EXPENSIVE, "clinician", None, "s")
+    assert result.kind == "clarification"
+    assert "expensive = the highest total claim cost" in result.answer
+    assert result.options == ["Yes, go ahead", "No, I mean something else"]
+    assert result.option_questions == {"Yes, go ahead": f"{EXPENSIVE} (expensive = the highest total claim cost)",
+                                       "No, I mean something else": ""}
+
+
+def test_yes_runs_it_with_the_assumption_spelled_out_and_never_asks_again(engine, memory):
+    run_chat(make_deps(ScriptedLLM(ASSUMING), engines={"clinical": engine}, memory=memory), EXPENSIVE, "clinician",
+             None, "s")
+    yes = f"{EXPENSIVE} (expensive = the highest total claim cost)"
+    llm = ScriptedLLM(ASSUMING, "SELECT count(*) AS n FROM patients", "There are 2.")  # no rewrite call
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), yes, "clinician", None, "s")
+    assert result.kind == "answer"
+    assert "expensive = the highest total claim cost" in llm.prompt_text(1)  # the SQL writer sees it
+
+
+def test_assumptions_are_about_what_the_person_means_not_how_data_is_stored():
+    # Live (2026-11-20): "How many patients have died?" was asked back because "died = deathdate is set" was listed.
+    from app.llm.prompts import route_system
+    rules = route_system("clinician")
+    assert "not how the data is stored" in rules and "deathdate" in rules
+
+
+def test_assumption_text_is_tidied(engine, memory):
+    messy = json.dumps({"kind": "sql", "databases": ["clinical"], "reason": "x",
+                        "assumptions": ["expensive = the highest total claim cost."]})
+    result = run_chat(make_deps(ScriptedLLM(messy), engines={"clinical": engine}, memory=memory), EXPENSIVE,
+                      "clinician", None, "t")
+    assert "..".join(["cost", " Is"]) not in result.answer and "cost. Is that" in result.answer

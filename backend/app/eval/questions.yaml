@@ -433,6 +433,18 @@
   gold: {db: clinical, sql: "SELECT count(DISTINCT c.patient) FROM conditions c JOIN patients p ON p.id = c.patient WHERE c.description ILIKE '%diabetes%' AND c.description NOT ILIKE 'prediabetes%' AND p.gender = 'F'"}
   note: Needs conversation memory ("them" = the diabetic patients from CL11).
 
+- id: CV05
+  category: conversation
+  role: clinician
+  question: Show their names
+  follow_up_of: CL11
+  expect_route: sql
+  gold: {db: clinical, sql: "SELECT DISTINCT p.first, p.last FROM conditions c JOIN patients p ON p.id = c.patient WHERE c.description ILIKE '%diabetes%' AND c.description NOT ILIKE 'prediabetes%'"}
+  must_not_contain: ["19 patients"]
+  note: >
+    Added 2026-11-20. Once returned one row per patient per diabetes-related diagnosis (19 rows, 8 people) and said
+    "19 patients" right after CL11 said 8. Now: one row per patient, and "N patients" is checked against the rows.
+
 - id: CV04
   category: conversation
   role: clinician

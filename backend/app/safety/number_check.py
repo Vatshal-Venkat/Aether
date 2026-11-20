@@ -18,7 +18,7 @@ from typing import Any
 # thousands commas, decimals, optional %.
 NUMBER = re.compile(r"(?<![A-Za-z0-9_.])([-−–]?)(\$?)(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(%?)(?![A-Za-z0-9_])")
 LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s+")
-ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?")
+ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?")
 RANK_HEADER = re.compile(r"^\s*(rank|#|no\.?|position|pos\.?|place)\s*$", re.IGNORECASE)
 TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
 
@@ -94,6 +94,9 @@ WORD = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b", re.IGNORECASE)
 
 def find_unverified_numbers(answer: str, rows: list[list[Any]], question: str, extra_allowed: set[float]) -> list[str]:
     allowed = _allowed_numbers(rows, question, extra_allowed)
+    # The AI sometimes writes dates with typographic hyphens ("2018‑11‑05", U+2011): read them as plain hyphens, or
+    # the parts would look like separate (negative) numbers. Minus signs (−, –) are left alone.
+    answer = answer.replace("‑", "-").replace("‐", "-")
     text = LIST_MARKER.sub("", _drop_rank_columns(answer))
     # Number words that are part of the data or question (a doctor called "Dr Two") are not counts.
     quoted_words = {w.lower() for cell in [question, *(c for r in rows for c in r if isinstance(c, str))]

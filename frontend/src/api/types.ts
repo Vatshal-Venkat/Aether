@@ -50,6 +50,8 @@ export interface ChatResult {
   /** Set when a backup AI model wrote the answer (the main one hit its daily limit). */
   model_notice?: string | null;                  // a clarifying question's one-click answers
   cached?: boolean;                    // answered instantly from the answer cache
+  /** The SQL was reused from the first time this question was asked — same query, so the same numbers. */
+  saved_query?: boolean;
 }
 
 export interface ChatRequest {

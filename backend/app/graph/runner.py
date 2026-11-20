@@ -8,6 +8,7 @@ If the AI service is down or rate-limited, you get a friendly message instead of
 
 import logging
 import math
+from datetime import date
 from collections.abc import Iterator
 
 from pydantic import BaseModel
@@ -24,12 +25,14 @@ from sqlalchemy.exc import SQLAlchemyError
 
 
 
+from app.memory.saved_queries import SavedQuery, SavedQueryStore, SavedSql, follow_up_key, rules_version, worth_saving
 from app.memory.store import ConversationStore, Turn
 from app.rag.rerank import load_reranker
 from app.rag.store import DrugLabelStore
 from app.llm.client import (MODELS_USED_KEY, LLMOutputError, _transient_errors, chat_models, daily_limit_rest,
                             get_chat_model, model_name, usage_ledger)
-from app.semantic.glossary import load_glossary
+from app.llm.prompts import CONTEXTUALIZE_SYSTEM, plan_system, route_system, sql_system
+from app.semantic.glossary import GLOSSARY_PATH, load_glossary
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +64,8 @@ class ChatResult(BaseModel):
     unverified_numbers: list[str] = []
     documents: list[DocumentRef] = []
     timings: dict[str, float] = {}
-    model_notice: str | None = None  # "gpt-oss-120b has used up its free daily limit, so ... the backup model ..."
+    model_notice: str | None = None
+    saved_query: bool = False  # the SQL was reused from the first time this question was asked (same numbers)  # "gpt-oss-120b has used up its free daily limit, so ... the backup model ..."
 
 
 def build_deps(settings: Settings) -> Deps:
@@ -79,9 +83,34 @@ def build_deps(settings: Settings) -> Deps:
         store=DrugLabelStore.open(settings.chroma_dir),  # None if not built: SQL questions still work
         reranker=load_reranker(settings),  # None if switched off or unavailable: passages keep the search order
         memory=ConversationStore(settings.memory_path),  # conversation turns, for follow-up questions
+        saved_queries=(SavedQueryStore(settings.saved_queries_path, saved_queries_version(glossary), question_embedder())
+                       if settings.saved_queries else None),  # same question -> same SQL -> same numbers
         patient_names={p["id"]: p["name"] for p in list_patients(engines["clinical"])},
         provider_names=list_provider_names(engines["billing"]),
     )
+
+
+def question_embedder():
+    """The small local model (all-MiniLM-L6-v2, already used by the drug-label library) that scores how alike two
+    questions are, for reworded questions. Loaded on first use; None if unavailable (exact matches still work)."""
+    try:
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
+        model = ONNXMiniLM_L6_V2()
+        return lambda texts: [list(map(float, v)) for v in model(list(texts))]
+    except Exception:  # noqa: BLE001
+        log.warning("question matching model unavailable; only exact repeat questions reuse saved queries")
+        return None
+
+
+def saved_queries_version(glossary) -> str:
+    """Fingerprint of what shapes the SQL — glossary, router / plan / SQL rules (today's date left out). When one
+    of them changes, saved queries made under the old rules are no longer used."""
+    today = date.today().isoformat()
+    texts = [GLOSSARY_PATH.read_text(encoding="utf-8"), CONTEXTUALIZE_SYSTEM, route_system("clinician"), route_system("patient"),
+             plan_system(glossary.links)]
+    texts += [sql_system(d, r).replace(today, "") for d in ("PostgreSQL", "MySQL") for r in ("clinician", "patient")]
+    return rules_version(*texts)
 
 
 def is_rate_limit(exc: Exception) -> bool:
@@ -146,7 +175,7 @@ def _initial_state(deps: Deps, question: str, role: str, patient_id: str | None,
     """The starting notepad, including this person's recent turns (if conversation memory is on)."""
     history = []
     if deps.memory is not None:
-        history = [{"question": t.question, "answer": t.answer, "kind": t.kind}
+        history = [{"question": t.question, "standalone": t.standalone, "answer": t.answer, "kind": t.kind}
                    for t in deps.memory.history(session_id, role, patient_id, deps.settings.memory_turns)]
     return {"question": question, "role": role, "patient_id": patient_id, "session_id": session_id,
             "history": history, "attempts": [], "timings": {}}
@@ -173,7 +202,9 @@ def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, sessi
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         _log_failure(exc)
         result = ChatResult(kind="error", answer=friendly_error(exc, deps))
+        final = None
     _remember(deps, question, role, patient_id, session_id, result)
+    _save_query(deps, final, result, role, patient_id)
     return result
 
 
@@ -230,6 +261,7 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
         yield {"event": "error", "data": {"message": result.answer}}
         return
     _remember(deps, question, role, patient_id, session_id, result)
+    _save_query(deps, final, result, role, patient_id)
     yield {"event": "final", "data": result.model_dump()}
 
 
@@ -256,4 +288,50 @@ def _package(final: dict) -> ChatResult:
         documents=[DocumentRef(label=c.label, source_url=c.source_url, excerpt=c.text[:300])
                    for c in final.get("chunks") or []],
         timings=final.get("timings") or {},
+        saved_query=_used_saved_sql(final),
     )
+
+
+def _final_sql(final: dict) -> list[dict] | None:
+    """Each plan step's SQL that worked (the AI's text, before any patient filter) — or None if a step has none."""
+    attempts = final.get("attempts") or []
+    out = []
+    for i, _ in enumerate(final.get("plan") or []):
+        ok = [a for a in attempts if a.get("step", 0) == i and not a.get("error")]
+        if not ok:
+            return None
+        out.append(ok[-1])
+    return out or None
+
+
+def _used_saved_sql(final: dict) -> bool:
+    steps = _final_sql(final) if final.get("saved_query") is not None else None
+    return bool(steps) and all(a.get("saved") for a in steps)
+
+
+def _save_query(deps: Deps, final: dict | None, result: ChatResult, role: str, patient_id: str | None) -> None:
+    """Remember how a clean answer was found, so the same question runs the same SQL next time (saved_queries.py)."""
+    if deps.saved_queries is None or not final or result.kind != "answer" or result.unverified_numbers:
+        return
+    route = final.get("route")
+    if route is None or route.kind not in ("sql", "hybrid") or not worth_saving(final["question"]):
+        return
+    steps = _final_sql(final)
+    if not steps or all(a.get("saved") for a in steps):
+        return  # a step didn't run, or nothing changed since it was saved
+    if role == "patient" and patient_id and any(patient_id in a["sql"] for a in steps):
+        return  # never keep SQL that names this patient: it could be reused for another
+    query = SavedQuery(route=route.model_copy(update={"options": [], "option_questions": {}}), plan=final["plan"],
+                       link=final.get("link"), sql=[SavedSql(step=a.get("step", 0), db=a["db"], sql=a["sql"]) for a in steps],
+                       standalone=final["question"] if final.get("original_question") else None,
+                       question=final["question"])
+    owner = patient_id if role == "patient" else None
+    try:
+        deps.saved_queries.save(role, final["question"], query, owner=owner)
+        history = final.get("history") or []
+        if final.get("original_question") and history:  # a follow-up: also under previous question + what was typed
+            previous = history[-1].get("standalone") or history[-1]["question"]
+            deps.saved_queries.save(role, follow_up_key(previous, final["original_question"]), query, owner=owner,
+                                    comparable=False)
+    except Exception:  # noqa: BLE001 — saving is a bonus; the answer is already done
+        log.warning("couldn't save the query for reuse", exc_info=True)
