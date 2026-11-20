@@ -1,13 +1,14 @@
 // The contents of the panels under an answer — nothing the backend did is hidden:
 //  * SqlList: every query the AI wrote, on which database; failed tries are struck through with the
 //    database's error (that's the self-correction loop, visible).
-//  * ResultTable: the rows that came back (first 200 drawn; the full count is shown).
+//  * ResultTable: the rows that came back (first 200 drawn; the full count is shown), with "Export CSV" (every row).
 //  * LabelList: the FDA label passages the answer was based on, with a link to the official label.
 //  * Timeline: how long each step took, as hairline bars.
 
 import { useState } from "react";
 import { ApiError, getResultPage } from "../../api/client";
 import type { DocumentRef, QueryResult, Role, SqlRecord } from "../../api/types";
+import { csvFilename, downloadCsv, toCsv } from "../../lib/csv";
 import { cleanNames } from "../../lib/names";
 
 const DB_LABEL = { clinical: "clinical_db", billing: "billing_db" } as const;
@@ -54,6 +55,29 @@ export function ResultTable({ table, owner }: { table: QueryResult; owner?: Owne
   const shown = paged ? rows : rows.slice(0, MAX_ROWS);
   const canLoadMore = paged && rows.length < table.total_rows;
 
+  // Export CSV: every row, not just those drawn — pages not loaded yet are fetched first (and shown too).
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    setProblem(null);
+    try {
+      let all = rows;
+      if (paged) {
+        for (let page = Math.floor(all.length / PAGE) + 1; all.length < table.total_rows; page++) {
+          const next = await getResultPage(table.result_id!, page, owner!.role, owner!.patientId);
+          if (!next.rows.length) break;
+          all = [...all, ...next.rows];
+        }
+        setRows(all);
+      }
+      downloadCsv(csvFilename(), toCsv(table.columns, all));
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.userMessage : "Couldn't export the table.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const loadMore = async () => {
     setLoading(true);
     setProblem(null);
@@ -76,6 +100,10 @@ export function ResultTable({ table, owner }: { table: QueryResult; owner?: Owne
           </span>
         )}
         {table.truncated && <span className="badge">partial — more rows exist</span>}
+        <button type="button" className="chip result__export" onClick={exportCsv} disabled={exporting}
+          title={table.truncated ? "Exports the rows Aether kept (the result was cut off)" : "Every row, as a spreadsheet file"}>
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
       </div>
       <div className="result__scroll">
         <table>

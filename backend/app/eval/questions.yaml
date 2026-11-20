@@ -89,6 +89,16 @@
   expect_route: sql
   gold: {db: clinical, sql: "SELECT split_part(description, ' ', 1) FROM medications GROUP BY description ORDER BY count(*) DESC LIMIT 1"}
 
+- id: CL13
+  category: clinical
+  role: clinician
+  question: How many visits were there each year since 2010, and which year had the most?
+  expect_route: sql
+  gold: {db: clinical, sql: "SELECT count(*) FROM encounters WHERE start >= '2010-01-01' GROUP BY extract(year FROM start) ORDER BY count(*) DESC LIMIT 1"}
+  note: >
+    Added 2026-11-20. 17 yearly rows: the AI is shown only 10, so it once called 2018's 382 visits "the peak"
+    (2021 had 502). Code now gives it the highest/lowest over all rows and checks peak/highest claims.
+
 # ---------------------------------------------------------------- billing (MySQL)
 - id: BI01
   category: billing

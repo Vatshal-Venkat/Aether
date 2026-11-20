@@ -408,3 +408,160 @@
   font-size: 12.5px;
   color: var(--gray-5);
 }
+
+/* ---- Export CSV (in the Table panel) ---- */
+.result__meta {
+  align-items: center;
+  min-height: 28px;
+}
+
+.result__export {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* ---- automatic chart: ink marks, muted text, hairline grid — one series, no colours ---- */
+.chart__measures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.chart__measure {
+  padding: 3px 10px;
+  border: var(--hairline);
+  border-radius: var(--radius-pill);
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.chart__measure:hover,
+.chart__measure[aria-pressed="true"] {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.chart__figure {
+  margin: 0;
+}
+
+.chart__bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px; /* the surface gap between neighbouring bars */
+}
+
+.chart__row {
+  display: grid;
+  grid-template-columns: minmax(0, 34%) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  font-size: 12.5px;
+}
+
+.chart__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gray-5);
+}
+
+.chart__track {
+  position: relative;
+  height: 14px;
+}
+
+.chart__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--ink);
+  border-radius: 0 4px 4px 0; /* rounded data end, square at the baseline */
+  transform-origin: left;
+  animation: chart-grow var(--t-slow) var(--ease) both;
+}
+
+.chart__bar[data-negative="true"] {
+  border-radius: 4px 0 0 4px;
+  transform-origin: right;
+}
+
+.chart__row:hover .chart__bar {
+  opacity: 0.75;
+}
+
+.chart__value {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.chart__caption {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart__caption strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart__svg:focus-visible {
+  outline: var(--hairline-strong);
+  outline-offset: 4px;
+}
+
+.chart__grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.chart__cross {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.chart__tick {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  fill: var(--muted);
+}
+
+.chart__line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart__dot {
+  fill: var(--ink);
+  stroke: var(--paper); /* the surface ring */
+  stroke-width: 2;
+}
+
+@keyframes chart-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart__bar { animation: none; }
+}

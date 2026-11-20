@@ -122,3 +122,39 @@ def test_patient_mode_answer_knows_rows_are_the_patients_own():
     llm2 = ScriptedLLM("There are 3.")
     synthesize(_state([[3]]), make_deps(llm2))
     assert "only the current patient's own records" not in str(llm2.calls[0][0].content)
+
+
+# --- highest / lowest over ALL rows (live 2026-11-20: "a peak of 382 in 2018" — the AI saw 10 of 17 rows) -------
+VISIT_ROWS = [[2010 + i, v] for i, v in enumerate([31, 47, 49, 82, 67, 50, 135, 330, 382, 330, 357, 502, 412, 367,
+                                                   410, 344, 366])]
+
+
+def test_a_sampled_table_comes_with_code_computed_extremes():
+    llm = ScriptedLLM("Visits peaked at 502 in 2021.\nSource: clinical_db.encounters")
+    synthesize({**_state(VISIT_ROWS, columns=("year", "visits")), "question": "Visits each year since 2010?"},
+               make_deps(llm))
+    prompt = llm.prompt_text()
+    assert "showing 10" in prompt and "2021 | 502" not in prompt  # the AI sees only a sample...
+    assert "highest 502 (year 2021)" in prompt                    # ...plus the extremes over all 17 rows
+    assert "only from these" in prompt.lower()
+
+
+def test_a_small_table_needs_no_extremes_note():
+    llm = ScriptedLLM("Ann has 5.\nSource: clinical_db.patients")
+    synthesize(_state([["Ann", 5], ["Bob", 3]], columns=("name", "n")), make_deps(llm))
+    assert "highest" not in llm.prompt_text().lower().split("question:")[1]
+
+
+def test_verify_rewrites_a_wrong_peak_once():
+    llm = ScriptedLLM("Visits peaked at 502 in 2021.")
+    state = {**_state(VISIT_ROWS, columns=("year", "visits")), "answer": "Visits peaked at 382 in 2018."}
+    out = verify_numbers(state, make_deps(llm))
+    assert out["answer"] == "Visits peaked at 502 in 2021." and out["unverified_numbers"] == []
+    assert "the highest visits is 502" in llm.prompt_text()  # the correction says what's wrong
+
+
+def test_verify_flags_a_wrong_peak_that_survives_the_rewrite():
+    llm = ScriptedLLM("Visits peaked at 382 in 2018.")
+    state = {**_state(VISIT_ROWS, columns=("year", "visits")), "answer": "Visits peaked at 382 in 2018."}
+    out = verify_numbers(state, make_deps(llm))
+    assert out["unverified_numbers"] == ["382 (called the highest; the highest visits is 502)"]

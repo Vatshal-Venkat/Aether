@@ -69,13 +69,38 @@ Choose "kind":
 - "hybrid": needs a person's records AND drug labels (e.g. "side effects of the medications I'm taking",
   "do any of patient X's drugs have a boxed warning?"). Set "databases" to ["clinical"].
 - "clarify": ONLY when the question is genuinely ambiguous and you cannot pick a clearly most likely meaning
-  (e.g. "what's the revenue?" — of a hospital? of an insurer?). Set "clarify_question" to one short question and
-  "options" to 2-4 short likely answers. If one reading is clearly most likely, answer it instead (kind "sql").
+  (e.g. "what's the revenue?" — of a hospital? of an insurer?), or too vague to act on ("show me the data",
+  "what about him?" with nothing to refer to). Set "clarify_question" to one short question, "options" to 2-4 short
+  likely answers, and "option_questions" to the complete question each option stands for, e.g.
+  {{"Hospitals": "Which hospital has the highest revenue?", "Insurers": "Which insurance company has the highest revenue?"}}.
+  If one reading is clearly most likely, answer it instead (kind "sql").
 - "out_of_scope": not answerable from this data (weather, general chit-chat, coding help, personal medical advice).
 - "refuse": not allowed for this user (see rules below).
 {patient_rules}
 Set "drugs" to the medicine names written in the question (empty list if none).
 Give a short "reason"."""
+
+
+def suggest_system(role: str) -> str:
+    """After 3 failed tries at a query: suggest close questions the databases CAN answer (a follow-up with options)."""
+    who = ("The user is in PATIENT MODE: suggest only questions about their OWN records (\"my medications\", "
+           "\"my last visit\"), never about other people or all patients." if role == "patient"
+           else "The user is a clinician and may ask about any patient or across all patients.")
+    return f"""A healthcare data chatbot could not turn the user's question into a working database query.
+Available data:
+{DATABASES_DESCRIPTION}
+
+{DRUG_LABELS_DESCRIPTION}
+{who}
+Suggest 2 or 3 questions that are as close as possible to what the user seems to want AND that this data can answer —
+simpler or more specific versions of their question. Each must be a complete question of at most 15 words.
+If the question has nothing to do with this data, return an empty list.
+Reply with JSON: {{"suggestions": ["...", "..."]}}"""
+
+
+def suggest_user(question: str, errors: list[str]) -> str:
+    tried = "\n".join(f"- {e[:200]}" for e in errors if e) or "- (no details)"
+    return f"Question: {question}\n\nWhat went wrong:\n{tried}"
 
 
 def plan_system(links: list[str]) -> str:

@@ -11,6 +11,8 @@ import { renderMarkdown } from "../../lib/markdown";
 import { cleanNames } from "../../lib/names";
 import { AnswerOrb } from "../orbs/AnswerOrb";
 import { Disclosures, type Panel } from "./Disclosure";
+import { chartSpec } from "../../lib/chart";
+import { Chart } from "./Chart";
 import { LabelList, type Owner, ResultTable, SqlList, Timeline } from "./details";
 import "./answer.css";
 
@@ -54,6 +56,9 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
     const n = result.table.total_rows;
     panels.push({ id: "table", title: "Table", count: `${n.toLocaleString("en-US")} row${n === 1 ? "" : "s"}`,
       content: <ResultTable table={result.table} owner={owner} /> });
+    // Names + numbers or dates + numbers: a chart, drawn automatically (lib/chart.ts decides).
+    const spec = chartSpec(result.table);
+    if (spec) panels.push({ id: "chart", title: "Chart", content: <Chart spec={spec} /> });
   }
   if (result.documents.length) {
     panels.push({ id: "labels", title: "Labels", count: String(result.documents.length), content: <LabelList documents={result.documents} /> });
@@ -123,7 +128,7 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
             )}
           </motion.p>
         )}
-        {result.kind === "clarification" && (result.options?.length ?? 0) > 0 && (
+        {(result.options?.length ?? 0) > 0 && ( // a clarifying question's options, or example questions
           <div className="answer__options">
             {result.options!.map((option) => (
               <button key={option} type="button" className="chip" disabled={!onOption || declined} onClick={() => choose(option)}>

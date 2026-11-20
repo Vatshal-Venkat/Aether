@@ -25,6 +25,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 
 from app.memory.store import ConversationStore, Turn
+from app.rag.rerank import load_reranker
 from app.rag.store import DrugLabelStore
 from app.llm.client import (MODELS_USED_KEY, LLMOutputError, _transient_errors, chat_models, daily_limit_rest,
                             get_chat_model, model_name, usage_ledger)
@@ -76,6 +77,7 @@ def build_deps(settings: Settings) -> Deps:
         glossary=glossary,
         engines=engines,
         store=DrugLabelStore.open(settings.chroma_dir),  # None if not built: SQL questions still work
+        reranker=load_reranker(settings),  # None if switched off or unavailable: passages keep the search order
         memory=ConversationStore(settings.memory_path),  # conversation turns, for follow-up questions
         patient_names={p["id"]: p["name"] for p in list_patients(engines["clinical"])},
         provider_names=list_provider_names(engines["billing"]),
@@ -231,6 +233,9 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
     yield {"event": "final", "data": result.model_dump()}
 
 
+OPTION_KINDS = ("clarification", "out_of_scope")
+
+
 def _package(final: dict) -> ChatResult:
     """The pipeline's final notepad -> the tidy result the API returns."""
     return ChatResult(
@@ -238,9 +243,10 @@ def _package(final: dict) -> ChatResult:
         kind=final["kind"],
         route=final["route"].kind if final.get("route") else None,
         standalone_question=final["question"] if final.get("original_question") else None,
-        options=final["route"].options if final.get("route") and final.get("kind") == "clarification" else [],
+        # One-click replies: a clarifying question's options, or example questions after "out of scope".
+        options=final["route"].options if final.get("route") and final.get("kind") in OPTION_KINDS else [],
         option_questions=(final["route"].option_questions
-                          if final.get("route") and final.get("kind") == "clarification" else {}),
+                          if final.get("route") and final.get("kind") in OPTION_KINDS else {}),
         # One record per try, on its own database; shows what really ran (with any row filter added).
         sql=[SqlRecord(db=a.get("db") or final.get("db", "clinical"), query=a.get("executed") or a["sql"],
                        error=a["error"]) for a in final.get("attempts") or []],

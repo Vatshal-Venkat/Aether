@@ -11,6 +11,7 @@ from app.db.catalog import Catalog
 from app.db.engines import DbName
 from app.llm.usage import UsageLedger
 from app.memory.store import ConversationStore
+from app.rag.rerank import Reranker
 from app.rag.store import DrugLabelStore
 from app.semantic.glossary import Glossary
 
@@ -28,3 +29,4 @@ class Deps:
     provider_names: list[str] = field(default_factory=list)      # doctors' names (they share surnames with patients)
     models: list[str] = field(default_factory=list)  # AI models in fallback order: main, backup, last resort
     usage: UsageLedger | None = None                 # tokens used / limits per model (the "model limits" panel)
+    reranker: Reranker | None = None                 # re-scores drug-label passages (None = keep the search order)

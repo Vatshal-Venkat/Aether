@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     rag_per_drug_k: int = 3     # passages per named medicine (fewer when many medicines are involved)
     rag_max_drugs: int = 12     # most medicines looked up for one question
     rag_max_chunks: int = 18    # total passages budget for one answer
+    # Reranker (app/rag/rerank.py): fetch a few more passages than needed, keep the ones that best answer the question
+    rag_rerank: bool = True
+    rag_rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    rag_rerank_pool: int = 3            # candidates fetched per passage kept (3 -> 18 read for a top 6)
+    rag_rerank_max_candidates: int = 36  # cap on passages read per question (keeps it under about 2 s)
 
     def rls_key(self) -> str:
         """The signing key: RLS_SECRET if set, otherwise derived from the PG admin password."""

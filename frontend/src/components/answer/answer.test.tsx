@@ -253,3 +253,67 @@ describe("Plan 5: pages and cache", () => {
     expect(screen.getByText("from cache")).toBeInTheDocument();
   });
 });
+
+describe("charts, CSV export and one-click suggestions", () => {
+  const insurers = { columns: ["name", "customers", "revenue"], rows: [["Medicare", 40, 900.5], ["Aetna", 25, 1200], ["Humana", 9, 300]],
+    total_rows: 3, truncated: false };
+
+  it("names + numbers get a Chart panel with one bar per row, values at the tips", async () => {
+    render(<AnswerCard result={{ ...base, table: insurers }} />);
+    await userEvent.click(screen.getByRole("button", { name: /Chart/ }));
+    const chart = screen.getByRole("figure", { name: /customers by name/i });
+    const bars = within(chart).getAllByRole("listitem");
+    expect(bars).toHaveLength(3);
+    expect(bars[0]).toHaveTextContent("Medicare");
+    expect(bars[0]).toHaveTextContent("40");
+  });
+
+  it("several number columns: choose which one to chart", async () => {
+    render(<AnswerCard result={{ ...base, table: insurers }} />);
+    await userEvent.click(screen.getByRole("button", { name: /Chart/ }));
+    await userEvent.click(screen.getByRole("button", { name: "revenue" }));
+    expect(screen.getByRole("button", { name: "revenue" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByRole("figure", { name: /revenue by name/i })).getAllByRole("listitem")[1]).toHaveTextContent("1,200");
+  });
+
+  it("dates + numbers get a line chart", async () => {
+    const table = { columns: ["year", "visits"], rows: [[2019, 10], [2020, 20], [2021, 15]], total_rows: 3, truncated: false };
+    render(<AnswerCard result={{ ...base, table }} />);
+    await userEvent.click(screen.getByRole("button", { name: /Chart/ }));
+    expect(screen.getByRole("img", { name: /visits by year, 2019 to 2021/i })).toBeInTheDocument();
+  });
+
+  it("a single number gets no chart", () => {
+    render(<AnswerCard result={base} />);
+    expect(screen.queryByRole("button", { name: /Chart/ })).toBeNull();
+  });
+
+  it("Export CSV downloads every row — fetching the pages not loaded yet", async () => {
+    const client = await import("../../api/client");
+    const csv = await import("../../lib/csv");
+    const pages = vi.spyOn(client, "getResultPage").mockImplementation(async (_id, page) => ({
+      columns: ["n"], rows: Array.from({ length: page === 3 ? 50 : 100 }, (_, i) => [page * 1000 + i]), page, pages: 3, total_rows: 250 }));
+    const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+    const table = { columns: ["n"], rows: Array.from({ length: 100 }, (_, i) => [i]), total_rows: 250, truncated: false, result_id: "abc" };
+    render(<AnswerCard result={{ ...base, table }} owner={{ role: "patient", patientId: "p1" }} />);
+    await userEvent.click(screen.getByRole("button", { name: /Table/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    await vi.waitFor(() => expect(download).toHaveBeenCalled());
+    expect(pages.mock.calls.map((c) => c[1])).toEqual([2, 3]);
+    expect(pages).toHaveBeenCalledWith("abc", 2, "patient", "p1");
+    const text = download.mock.calls[0][1];
+    expect(text.split("\r\n").filter(Boolean)).toHaveLength(251); // header + 250 rows
+    expect(download.mock.calls[0][0]).toMatch(/^aether-result-.*\.csv$/);
+    pages.mockRestore();
+    download.mockRestore();
+  });
+
+  it("out-of-scope replies offer example questions to click", async () => {
+    const onOption = vi.fn();
+    render(<AnswerCard result={{ ...base, kind: "out_of_scope", answer: "I can only answer... For example:", table: null, sql: [],
+      options: ["How many patients are there?"], option_questions: { "How many patients are there?": "How many patients are there?" } }}
+      onOption={onOption} />);
+    await userEvent.click(screen.getByRole("button", { name: "How many patients are there?" }));
+    expect(onOption).toHaveBeenCalledWith("How many patients are there?");
+  });
+});

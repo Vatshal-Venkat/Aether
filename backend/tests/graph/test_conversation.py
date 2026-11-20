@@ -130,3 +130,65 @@ def test_rewrite_that_drops_the_name_is_still_refused(engine, memory):
     deps = make_deps(llm, engines={"clinical": engine}, memory=memory)
     deps.patient_names = {"p1": "Ann1 Lee2", "p2": "Bob3 Ray4"}
     assert run_chat(deps, "and what about Bob3?", "patient", "p1", "s").kind == "refusal"
+
+
+# --- better follow-ups when Aether doesn't understand ------------------------------------------------
+def test_clarify_options_carry_the_full_question_they_stand_for(engine, memory):
+    clarify = {"kind": "clarify", "databases": [], "reason": "ambiguous",
+               "clarify_question": "Revenue of what?", "options": ["Hospitals", "Insurers"],
+               "option_questions": {"Hospitals": "Which hospital has the highest revenue?",
+                                    "Insurers": "Which insurance company has the highest revenue?",
+                                    "Doctors": "made up, not one of the options"}}
+    result = run_chat(make_deps(ScriptedLLM(json.dumps(clarify)), engines={"clinical": engine}, memory=memory),
+                      "What's the revenue?", "clinician", None, "s")
+    assert result.options == ["Hospitals", "Insurers"]
+    assert result.option_questions == {"Hospitals": "Which hospital has the highest revenue?",
+                                       "Insurers": "Which insurance company has the highest revenue?"}
+
+
+def test_router_is_told_to_write_full_questions_for_options(engine, memory):
+    llm = ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "x"}')
+    run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), "hm", "clinician", None, "s")
+    assert "option_questions" in llm.prompt_text(0) and "too vague" in llm.prompt_text(0)
+
+
+BAD_SQL = ("SELECT a FROM patients", "SELECT b FROM patients", "SELECT c FROM patients")
+
+
+def test_failed_query_offers_questions_it_can_answer(engine, memory):
+    suggestions = {"suggestions": ["How many patients are there?", "How many female patients are there?"]}
+    llm = ScriptedLLM(ROUTE_SQL, *BAD_SQL, json.dumps(suggestions))
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory),
+                      "What's the patient churn by cohort?", "clinician", None, "s")
+    assert result.kind == "clarification" and len(result.sql) == 3
+    assert "Did you mean" in result.answer
+    assert result.options == ["How many patients are there?", "How many female patients are there?", "None of these"]
+    assert result.option_questions["How many patients are there?"] == "How many patients are there?"
+    assert result.option_questions["None of these"] == ""
+    prompt = llm.prompt_text()
+    assert "patient churn by cohort" in prompt and "column" in prompt.lower()  # sees the question and what went wrong
+    assert memory.turns("s")[-1].kind == "clarification"  # a typed reply is read as an answer to it
+
+
+def test_failed_query_without_usable_suggestions_keeps_the_plain_message(engine, memory):
+    llm = ScriptedLLM(ROUTE_SQL, *BAD_SQL, '{"suggestions": []}')
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), "??", "clinician", None, "s")
+    assert result.kind == "error" and "3 tries" in result.answer and result.options == []
+
+
+def test_failed_query_suggestions_never_name_another_patient(engine, memory):
+    suggestions = {"suggestions": ["What medications is Bob3 Ray4 taking?", "What medications am I taking?"]}
+    llm = ScriptedLLM(ROUTE_SQL, *BAD_SQL, json.dumps(suggestions))
+    deps = make_deps(llm, engines={"clinical": engine}, memory=memory)
+    deps.patient_names = {"p1": "Ann1 Lee2", "p2": "Bob3 Ray4"}
+    result = run_chat(deps, "my meds thing", "patient", "p1", "s")
+    assert result.options == ["What medications am I taking?", "None of these"]
+    assert "own records" in llm.prompt_text().lower()
+
+
+@pytest.mark.parametrize("role,patient,expected", [("clinician", None, "How many patients are there?"),
+                                                   ("patient", "p1", "What medications am I taking?")])
+def test_out_of_scope_offers_example_questions(engine, memory, role, patient, expected):
+    llm = ScriptedLLM('{"kind": "out_of_scope", "databases": [], "reason": "weather"}')
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), "Weather today?", role, patient, "s")
+    assert result.kind == "out_of_scope" and expected in result.options and len(result.options) == 3

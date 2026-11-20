@@ -6,6 +6,8 @@ numbers, naming its sources. If the query found nothing, we don't ask the AI at 
 we simply say "No records found", so there is nothing to invent.
 For drug questions the AI also gets the FDA label passages, fenced off as reference text, and
 must cite them ("openFDA label: Lisinopril — Side effects").
+When the AI sees only part of a long table, code adds the highest / lowest (and first / last) values over ALL rows
+(app/safety/extremes.py): live, an AI shown 10 of 17 yearly rows called 2018's 382 visits "the peak" — 2021 had 502.
 """
 
 import re
@@ -16,6 +18,7 @@ from app.graph.state import ChatState, QueryResult
 from app.graph.timing import timed
 from app.llm.client import ask_text
 from app.llm.prompts import RAG_RULES
+from app.safety.extremes import extremes_note
 
 SYSTEM = """You answer questions about healthcare data using ONLY the query results provided.
 Rules:
@@ -106,6 +109,9 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
             f"Results ({result.total_rows} rows{', TRUNCATED' if result.truncated else ''}; showing {shown}):\n"
             f"{_results_table(state, limit)}\n\n"
         )
+    if result is not None and (len(result.rows) > shown or result.truncated) and (facts := extremes_note(result)):
+        user += (f"{facts}\nYou see only {shown} of the rows: state any highest, lowest, peak or trend only from these "
+                 "computed facts, never from the rows shown.\n\n")
     if result is not None and (note := tie_note(state["question"], result)):
         user += f"Note: {note}\n\n"
     if result is not None and result.total_rows == 0 and chunks:

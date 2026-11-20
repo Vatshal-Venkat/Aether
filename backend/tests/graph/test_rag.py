@@ -254,3 +254,50 @@ def test_hybrid_with_no_rows_still_answers_from_named_drug_labels(store, clinica
     # to someone who has never taken it.
     prompt = llm.prompt_text(2)
     assert "found no matching records" in prompt and "not in their records" in prompt
+
+
+# --- reranker -------------------------------------------------------------------------------------
+class SpyReranker:
+    """Scores passages containing `word` highest; remembers how many passages it was given."""
+
+    def __init__(self, word: str, require: bool = True):
+        self.word, self.require, self.seen, self.kept = word, require, [], []
+
+    def rerank(self, query, chunks, k):
+        from app.rag.rerank import Reranker
+
+        self.seen.append(len(chunks))
+        assert not self.require or any(self.word in c.text.lower() for c in chunks)  # else the test proves nothing
+        self.kept = Reranker(lambda q, texts: [float(self.word in t.lower()) for t in texts]).rerank(query, chunks, k)
+        return self.kept
+
+
+def test_reranker_reads_more_passages_and_hands_the_best_over_first(store):
+    spy = SpyReranker("angioedema")
+    llm = ScriptedLLM(route("rag", drugs=["lisinopril"]), "Angioedema can occur. Source: openFDA label: Lisinopril — Warnings")
+    deps = make_deps(llm, store=store, reranker=spy, rag_per_drug_k=2, rag_rerank_pool=3)
+    result = run_chat(deps, "Can lisinopril cause swelling?", "clinician", None, "s")
+    assert spy.seen == [6]                       # 2 kept per medicine x a pool of 3
+    assert len(result.documents) == 2
+    assert "angioedema" in spy.kept[0].text.lower()
+    assert result.documents[0].excerpt == spy.kept[0].text[:300]
+    excerpts = llm.prompt_text().split("<<<EXCERPTS")[1]  # the AI reads it first
+    assert excerpts.index(spy.kept[0].text[:100]) < excerpts.index(spy.kept[1].text[:100])
+
+
+def test_reranker_candidates_are_capped_when_many_medicines_are_involved(store):
+    spy = SpyReranker("hypoglycemia", require=False)
+    llm = ScriptedLLM(route("rag", drugs=["lisinopril", "insulin"]), "Answer.")
+    deps = make_deps(llm, store=store, reranker=spy, rag_per_drug_k=3, rag_rerank_pool=3, rag_rerank_max_candidates=8)
+    run_chat(deps, "Side effects of lisinopril and insulin?", "clinician", None, "s")
+    assert len(spy.seen) == 2 and all(n <= 4 for n in spy.seen)  # 8 candidates shared by 2 medicines
+
+
+def test_general_question_is_reranked_across_the_library(store):
+    spy = SpyReranker("hypoglycemia")
+    llm = ScriptedLLM(route("rag"), "Insulin can cause it. Source: openFDA label: Insulin Human — Side effects")
+    deps = make_deps(llm, store=store, reranker=spy, rag_top_k=2, rag_rerank_pool=3)
+    result = run_chat(deps, "Which medicines can cause low blood sugar?", "clinician", None, "s")
+    assert spy.seen == [6] and len(result.documents) == 2
+    assert "hypoglycemia" in spy.kept[0].text.lower()
+    assert result.documents[0].excerpt == spy.kept[0].text[:300]

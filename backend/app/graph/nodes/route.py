@@ -55,6 +55,9 @@ def route(state: ChatState, deps: Deps) -> dict:
                                                                 deps.provider_names) for q in asked if q):
         return {"route": RouteDecision(kind="refuse", reason="names another patient (checked by code)")}
     decision = ask_json(deps.llm, route_system(state["role"]), state["question"], RouteDecision)
+    if decision.kind == "clarify":  # keep only full questions for options actually offered
+        decision = decision.model_copy(update={"option_questions": {
+            o: q.strip() for o, q in decision.option_questions.items() if o in decision.options and q.strip()}})
     if decision.kind == "sql" and not decision.databases:
         decision = decision.model_copy(update={"databases": ["clinical"]})
     if decision.kind == "hybrid":  # a person's medicines live in clinical_db; labels are looked up afterwards

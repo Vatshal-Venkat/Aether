@@ -43,6 +43,7 @@ class Chunk(BaseModel):
     section: str
     source_url: str
     distance: float
+    score: float | None = None  # the reranker's relevance score (higher = better), when it ran
 
     @property
     def label(self) -> str:

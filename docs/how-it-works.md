@@ -351,6 +351,42 @@ A layer now sits around the pipeline (`backend/app/service.py`), the way a real 
   time per question and per step, failed SQL tries, refused floods, questions in progress. Tools like Grafana can graph
   them; you can also just open the page.
 
+### Step 24 — Reranker, charts, CSV export, better follow-ups ✅
+- **Reranker** (`backend/app/rag/rerank.py`). The label search now fetches 3× more passages than it needs. A small free
+  model, `ms-marco-MiniLM-L-6-v2` (23 MB, runs on the CPU via onnxruntime), then reads each passage *together with* the
+  question, scores it, and keeps the best ones, best first. The AI reads the most relevant passage first.
+  - **Why this model:** we tried 3 free rerankers on our own label passages. This one put the right passage first
+    for all 4 test questions, for example "lisinopril while pregnant?" → the fetal-toxicity warning instead of an
+    angioedema warning. bge-reranker-base was about 4× slower and no better.
+  - **Cost:** about 0.7 s per drug question (live, the retrieve step took 1.3 s in total).
+  - **Fallback:** if the model can't load, the search's own order is used. Turn it off with `RAG_RERANK=false`.
+- **Automatic charts** (`frontend/src/lib/chart.ts`, `Chart.tsx`).
+  - **When:** a result of names + a number gets a **Chart** panel with bars. Dates or years + a number get a line.
+  - **No chart** for a single number, repeated labels, or ids only. Ids, codes and rank columns are never plotted
+    as amounts. With several number columns, you choose which one to chart.
+  - No chart library: plain HTML/SVG in the site's hairline style.
+- **Export CSV** (in the Table panel).
+  - Downloads every row: pages not loaded yet are fetched first.
+  - Names lose Synthea's digits, as on screen.
+  - Text that a spreadsheet would run as a formula (`=…`, `+…`, `@…`) is defused with a leading `'` (CSV-injection
+    protection).
+- **Better follow-ups when Aether doesn't understand.**
+  - Clarifying options now carry the **full question** each one stands for ("Insurers" → "Which insurance company has
+    the highest revenue?"), so a click asks exactly that. Very vague questions also get a clarifying question.
+  - When 3 tries at a query fail, one extra AI call suggests **2–3 close questions the data can answer**, shown as
+    one-click options plus "None of these". In patient mode, a suggestion naming another patient is dropped. Live
+    example: "patient churn rate by cohort?" → "How many patients had no visits in the last six months?" and 2 more.
+  - "Out of scope" replies now offer 3 example questions to click.
+- **Peak / highest / lowest claims are checked** (`backend/app/safety/extremes.py`).
+  - **The problem:** the new chart exposed it. "Visits each year since 2010" returned 17 rows, but for long tables the
+    AI is shown only the first 10. It called 2018's 382 visits "the peak", while 2021 had 502. The number check
+    passed because 382 is real; the *claim* was wrong.
+  - **Prevention:** when the AI sees only part of a table, code now computes the highest, lowest, first and last
+    values over **all** rows, and the AI must use those.
+  - **Detection:** the checker step also tests every "peak / highest / lowest / the most / fewest" claim against the
+    whole table. A wrong claim gets one rewrite; if it is still wrong, it is shown as a warning.
+  - **Result:** live re-run → "a peak of 502 in 2021". The question is now in the accuracy test (CL13).
+
 ## 5. What happens when you ask a question
 
 ```

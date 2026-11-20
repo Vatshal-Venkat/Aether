@@ -10,6 +10,10 @@ we read only those parts — a precise lookup instead of "closest in meaning". T
 medicines' labels. If the question names only medicines that aren't in our library, we say so
 rather than let the AI guess. A general question that names no medicine searches the whole library.
 
+With the reranker on (app/rag/rerank.py), each search fetches a few more passages than needed; the reranker
+reads each one together with the question and keeps the ones that answer it best, best first — so the AI reads
+the most relevant passage first ("can I take lisinopril while pregnant?" -> the fetal-toxicity warning).
+
 We also write a short note saying what was checked: which medicines, which sections, which labels
 have no such section, which medicines have no label at all, and whether some were left out (too
 many to read at once). Without it, the AI once answered "only lisinopril has a boxed warning"
@@ -69,6 +73,20 @@ def _section_phrase(sections: list[str]) -> str:
     return f"{quoted} section{'s' if len(sections) > 1 else ''}"
 
 
+def _search(deps: Deps, question: str, drugs: list[str] | None, k: int, sections: list[str] | None,
+            pool: int) -> list:
+    """The k best passages: straight from the search, or (with the reranker) the best k of `pool` candidates."""
+    if deps.reranker is None:
+        return deps.store.search(question, drugs, k, sections=sections)
+    candidates = deps.store.search(question, drugs, max(k, pool), sections=sections)
+    return deps.reranker.rerank(question, candidates, k)
+
+
+def _pool(settings, k: int, searches: int) -> int:
+    """Candidates per search: rag_rerank_pool x k, but never more than the per-question cap allows."""
+    return min(k * settings.rag_rerank_pool, max(k, settings.rag_rerank_max_candidates // max(1, searches)))
+
+
 @timed("retrieve")
 def retrieve(state: ChatState, deps: Deps) -> dict:
     store, settings = deps.store, deps.settings
@@ -91,7 +109,7 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
         per_drug = max(1, min(settings.rag_per_drug_k, settings.rag_max_chunks // len(drugs)))
         chunks, without = [], []
         for d in drugs:
-            found = store.search(question, [d], per_drug, sections=sections or None)
+            found = _search(deps, question, [d], per_drug, sections or None, _pool(settings, per_drug, len(drugs)))
             chunks += found
             if not found:
                 without.append(d)
@@ -116,7 +134,9 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
     elif route.drugs:
         return {"chunks": [], "rag_problem": "unknown_drug"}  # names only medicines we don't have
     else:
-        chunks = store.search(question, None, settings.rag_top_k, sections=sections or None)
+        chunks = _search(deps, question, None, settings.rag_top_k, sections or None, _pool(settings, settings.rag_top_k, 1))
+    if deps.reranker is not None and chunks:
+        chunks = sorted(chunks, key=lambda c: -(c.score or 0.0))  # best first across all medicines (stable)
 
     labels = list(dict.fromkeys(c.label for c in chunks))
     sources = list(dict.fromkeys([*(state.get("sources") or []), *labels]))
