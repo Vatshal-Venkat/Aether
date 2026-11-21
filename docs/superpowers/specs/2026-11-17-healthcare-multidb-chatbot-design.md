@@ -161,6 +161,9 @@ POST /api/chat ──► LangGraph pipeline ──► answer + SQL + sources + r
 - **contextualize** — rewrites a follow-up ("what about last year?") into a standalone question using recent turns.
 - **route** — classifies intent: `sql` (which DB(s)), `rag`, `hybrid`, `clarify`, `out_of_scope`, `refuse` (patient asking
   about others). LLM with structured output, informed by glossary keywords and a short description of each source.
+  *Updated 2026-11-20:* `clarify` whenever the meaning is unsure, never a guess (two readings, a vague term, an unclear
+  reference). The router also lists any assumption it would make about what the person means, and code turns that into
+  an "Is that what you mean?" question. Terms the data defines plainly ("died" = death date set) are not assumptions.
 - **plan** — for multi-DB questions, produce ordered sub-queries; a later step may take a previous step's results as
   input (e.g. top-5 patient IDs → claims lookup). IDs passed between steps are bound by code as parameters, never pasted by the LLM.
 - **inject_schema** — selects only relevant tables/columns from a schema catalog built by introspection at startup,
@@ -171,6 +174,8 @@ POST /api/chat ──► LangGraph pipeline ──► answer + SQL + sources + r
 - **row_filter** — patient mode: MySQL rewrite as in §8; Postgres sets transaction-local settings.
 - **execute** — pooled read-only connection, statement timeout (Postgres `statement_timeout`, MySQL `MAX_EXECUTION_TIME`), row cap.
 - **self-correct** — conditional edge back to generate_sql on error (max 3 attempts), then a graceful failure message.
+  *Updated 2026-11-20:* after 3 failed tries, one extra AI call suggests 2–3 close questions the data can answer, shown as
+  one-click options with "None of these". The plain failure message remains the fallback.
 - **merge** — joins/combines sub-results in Python on declared keys; records provenance per column.
 - **retrieve** (RAG) — embed question, top-k from ChromaDB; in hybrid mode, query is narrowed using SQL results
   (e.g. the patient's medication names).
@@ -182,7 +187,14 @@ POST /api/chat ──► LangGraph pipeline ──► answer + SQL + sources + r
   numbers called out; if it still fails, return the answer with `unverified_numbers` listed in the payload and a visible note.
 - **audit** — writes the audit record.
 
-**Conversation memory:** LangGraph checkpointer persisted to SQLite, keyed by `session_id`; last N turns used.
+**Conversation memory:** ~~LangGraph checkpointer persisted to SQLite, keyed by `session_id`; last N turns used.~~
+*Changed in Plan 4:* a small SQLite table keyed by session + role + patient, last 3 turns, answers trimmed to 400
+characters, result rows never stored. The LangGraph checkpointer would have saved whole states including result rows,
+which are patient data.
+
+**Saved queries** *(added 2026-11-20)*: a question that was answered cleanly is saved with its route, plan and SQL. The same
+question, or a very close rewording, reuses that SQL, so it gives the same numbers every time. A less certain rewording
+gets "Do you mean …?" first. See `backend/app/memory/saved_queries.py`.
 
 ## 10. API (FastAPI)
 

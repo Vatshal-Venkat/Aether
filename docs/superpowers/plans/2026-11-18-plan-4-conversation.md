@@ -11,7 +11,8 @@
 ## Global Constraints
 - Memory is scoped to (session_id, role, patient_id); history window = last 3 turns; stored answer text truncated to 400 chars; result rows are never stored.
 - No history → no extra AI call (contextualize is free for first questions).
-- Clarification only for genuinely ambiguous questions; the router prompt must prefer answering when one reading is clearly most likely.
+- ~~Clarification only for genuinely ambiguous questions; the router prompt must prefer answering when one reading is clearly most likely.~~
+  **Superseded 2026-11-20:** Aether asks whenever it is not sure what the person means and never guesses (two readings, a vague word like "expensive", an unclear "him"). The router also lists any assumption it would have to make about the person's meaning, and code turns that into "To answer this I'd have to assume: … Is that what you mean?". Clear questions, including terms the data defines plainly ("died" = a death date is set), are still answered directly. See `docs/how-it-works.md`, Step 24.
 - Rulings vs spec, decided here: (1) a small SQLite table instead of a LangGraph checkpointer — the checkpointer would persist whole states including result rows (patient data), and a plain table makes the privacy scoping explicit and readable; (2) the answer text is revealed word by word on the website instead of server `answer_chunk` events — the answer is held back until fact-checked anyway, so server chunks would add requests without adding information.
 
 ## Review Focus
@@ -28,7 +29,7 @@
 ### Task 2: contextualize + clarify in the graph
 - State: `history`, `original_question`; `RouteDecision` + `clarify_question: str = ""`, `options: list[str] = []`; RouteKind + `"clarify"`; AnswerKind + `"clarification"`.
 - `contextualize(state, deps)`: no history → `{}` (no AI call). Else `ask_json` → `{"standalone": str}`; sets `question` = standalone, `original_question` = what the user typed.
-- route prompt: describe `clarify` (only when truly ambiguous; give a short question + 2–4 short options).
+- route prompt: describe `clarify` (~~only when truly ambiguous~~ whenever unsure, updated 2026-11-20; give a short question + 2–4 short options, each carrying the full question it stands for).
 - `clarify` node: `kind="clarification"`, answer = clarify_question.
 - Runner: `run_chat`/`stream_chat` accept `store`; load history (answer/clarification kinds only), save the turn after; `ChatResult.standalone_question` (when it differs) and `options`.
 - Tests: no-history no-call; follow-up rewritten and used downstream (SQL prompt contains the standalone question); clarification result with options; clarification then choice; patient-mode privacy on standalone; turn saved with kind; errors saved but not used as context.
