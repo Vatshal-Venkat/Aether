@@ -275,6 +275,103 @@
   color: var(--muted);
 }
 
+/* ---- past conversations (next to the model limits) ---- */
+.history {
+  position: relative;
+}
+
+.history__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px;
+  border: var(--hairline-strong);
+  background: var(--paper);
+}
+
+.history__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: var(--hairline);
+}
+
+.history__title {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history__new {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.history__list {
+  max-height: min(360px, 60vh);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.history__item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: var(--hairline);
+  background: none;
+  color: var(--gray-5);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
+}
+
+.history__item:hover,
+.history__item:focus-visible,
+.history__item[aria-current="true"] {
+  color: var(--ink);
+}
+
+.history__q {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.history__meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.history__now {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--ink);
+}
+
+.history__note,
+.history__problem,
+.history__empty {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* ---- conversation ---- */
 .app__main {
   display: flex;

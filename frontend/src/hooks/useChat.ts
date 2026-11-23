@@ -8,14 +8,20 @@
 //    is thrown away (each send remembers the "generation" it belongs to).
 
 import { useCallback, useRef, useState } from "react";
-import { ApiError, askChatStream } from "../api/client";
-import type { ChatResult, Patient, Progress, Role } from "../api/types";
+import { ApiError, askChatStream, getConversation } from "../api/client";
+import type { ChatResult, PastTurn, Patient, Progress, Role } from "../api/types";
 
 export interface Message {
   id: string;
   type: "user" | "assistant" | "error";
   text?: string;
   result?: ChatResult;
+}
+
+/** A saved turn as an answer card: the answer text only (tables and SQL are never stored). */
+function pastResult(t: PastTurn): ChatResult {
+  return { answer: t.answer, kind: t.kind, sql: [], sources: [], table: null, unverified_numbers: [], documents: [],
+    timings: {}, standalone_question: t.standalone !== t.question ? t.standalone : null, from_history: true };
 }
 
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -27,6 +33,7 @@ export function useChat() {
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null); // the step the backend is on
   const session = useRef(newId());
+  const [sessionId, setSessionId] = useState(session.current); // shown as "current" in Past conversations
   const generation = useRef(0);
   const inflight = useRef<AbortController | null>(null);
 
@@ -35,6 +42,7 @@ export function useChat() {
     inflight.current = null;
     generation.current += 1;
     session.current = newId();
+    setSessionId(session.current);
     setMessages([]);
     setPending(false);
     setProgress(null);
@@ -84,5 +92,32 @@ export function useChat() {
     [canSend, role, patient],
   );
 
-  return { role, patient, messages, pending, progress, canSend, setRole, send, reset };
+  /** Reopen a past conversation: show its saved questions and answers, and keep its session id so the next
+   *  question is a follow-up the backend remembers. Only this person's own conversations can be opened. */
+  const openConversation = useCallback(
+    async (id: string) => {
+      reset();
+      const gen = generation.current;
+      setPending(true);
+      try {
+        const turns = await getConversation(id, role, role === "patient" ? patient?.id ?? null : null);
+        if (gen !== generation.current) return;
+        session.current = id;
+        setSessionId(id);
+        setMessages(turns.flatMap((t) => [
+          { id: newId(), type: "user" as const, text: t.question },
+          { id: newId(), type: "assistant" as const, result: pastResult(t) },
+        ]));
+      } catch (err) {
+        if (gen !== generation.current) return;
+        const text = err instanceof ApiError ? err.userMessage : "Couldn't open that conversation.";
+        setMessages([{ id: newId(), type: "error", text }]);
+      } finally {
+        if (gen === generation.current) setPending(false);
+      }
+    },
+    [reset, role, patient],
+  );
+
+  return { role, patient, messages, pending, progress, canSend, setRole, send, reset, sessionId, openConversation };
 }

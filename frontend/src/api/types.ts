@@ -48,10 +48,12 @@ export interface ChatResult {
   /** Optional: the exact question each option sends ("" = send nothing; the person asks again). */
   option_questions?: Record<string, string>;
   /** Set when a backup AI model wrote the answer (the main one hit its daily limit). */
-  model_notice?: string | null;                  // a clarifying question's one-click answers
+  model_notice?: string | null;
   cached?: boolean;                    // answered instantly from the answer cache
   /** The SQL was reused from the first time this question was asked — same query, so the same numbers. */
   saved_query?: boolean;
+  /** Reopened from "Past conversations": only the answer text is kept (never tables or SQL). */
+  from_history?: boolean;
 }
 
 export interface ChatRequest {
@@ -81,6 +83,24 @@ export interface ModelUsage {
   exact: boolean;                       // the provider's own figure (else our count)
   complete: boolean;                    // our count covers the full 24 hours (else earlier use is missing)
   counting_since: number;               // when counting started (seconds since 1970)
+}
+
+/** One past conversation in the history list (GET /api/sessions) — only the asker's own. */
+export interface Conversation {
+  session_id: string;
+  title: string;        // its first question
+  questions: number;
+  started_at: string;
+  updated_at: string;
+}
+
+/** One turn of a past conversation (GET /api/sessions/{id}). */
+export interface PastTurn {
+  question: string;
+  standalone: string;
+  answer: string;
+  kind: AnswerKind;
+  created_at: string | null;
 }
 
 export interface Health {

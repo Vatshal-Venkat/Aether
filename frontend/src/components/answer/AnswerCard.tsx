@@ -146,6 +146,9 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
           </div>
         )}
         {declined && <p className="answer__declined">No problem — ask your question again.</p>}
+        {result.from_history && (
+          <p className="answer__history">Saved answer · tables and SQL aren't kept — ask again to see them.</p>
+        )}
         <Disclosures panels={panels} />
       </div>
     </article>

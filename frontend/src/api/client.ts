@@ -3,7 +3,7 @@
 // sentence a person can read ("Can't reach the Aether backend...") instead of a raw HTTP code.
 // A cancelled request (we cancel when you switch role mid-question) is passed through untouched.
 
-import type { ChatRequest, ChatResult, Health, ModelUsage, Patient, Progress, ResultPage, Role } from "./types";
+import type { ChatRequest, ChatResult, Conversation, Health, ModelUsage, PastTurn, Patient, Progress, ResultPage, Role } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -116,6 +116,22 @@ export function getResultPage(resultId: string, page: number, role: Role, patien
   const params = new URLSearchParams({ page: String(page), role });
   if (role === "patient" && patientId) params.set("patient_id", patientId);
   return request<ResultPage>(`/api/results/${encodeURIComponent(resultId)}?${params}`);
+}
+
+function whoParams(role: Role, patientId: string | null): URLSearchParams {
+  const params = new URLSearchParams({ role });
+  if (role === "patient" && patientId) params.set("patient_id", patientId);
+  return params;
+}
+
+/** This person's past conversations, newest first — the clinician's, or one patient's own. */
+export function getConversations(role: Role, patientId: string | null): Promise<Conversation[]> {
+  return request<Conversation[]>(`/api/sessions?${whoParams(role, patientId)}`);
+}
+
+/** The turns of one past conversation (only if it belongs to this person). */
+export function getConversation(sessionId: string, role: Role, patientId: string | null): Promise<PastTurn[]> {
+  return request<PastTurn[]>(`/api/sessions/${encodeURIComponent(sessionId)}?${whoParams(role, patientId)}`);
 }
 
 export function getPatients(): Promise<Patient[]> {

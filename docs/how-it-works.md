@@ -445,6 +445,16 @@ A layer now sits around the pipeline (`backend/app/service.py`), the way a real 
   - Data definitions (died = a death date is set) are not assumptions, so clear questions are still answered
     directly. Live: "died", "alive", "most common diagnosis" were answered; "expensive claims", "sickest patients"
     and "high blood pressure" were asked about.
+- **Past conversations** (the clock button next to the model limits).
+  - Lists **your own** past conversations, newest first: the clinician view's in clinician mode, only the chosen
+    patient's in patient mode, never anyone else's. Each shows its first question, how many questions it has, and when.
+  - Opening one shows its saved questions and answers. The next question **continues it**, because follow-ups still
+    remember the conversation. "New conversation" starts afresh.
+  - Answers are now saved in full (up to 8,000 characters); the AI still only gets the first 400 back as context.
+    Result tables and SQL are never saved, for privacy, so a reopened answer says "ask again to see them".
+  - **No "everyone's history" admin view yet:** there is no login, so it would show every patient's questions to
+    whoever opened the site. That view needs login and an admin role first.
+  - API: `GET /api/sessions?role=…&patient_id=…` (the list) and `GET /api/sessions/{id}` (one conversation).
   - **Also fixed:**
     - dates the AI writes with typographic hyphens (`2018‑11‑05T09:10:23`) no longer trigger false number warnings;
     - an empty AI reply is retried once, then replaced by a plain message.

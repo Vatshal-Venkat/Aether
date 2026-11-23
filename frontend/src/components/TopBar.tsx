@@ -1,5 +1,5 @@
 // The bar across the top: the AETHER wordmark, the "view as" switch (and patient picker), the
-// backend status orb and the theme toggle. A single hairline separates it from the conversation.
+// backend status orb, past conversations, model limits and the theme toggle. A single hairline separates it from the conversation.
 
 import type { Health, Patient, Role } from "../api/types";
 import type { Theme } from "../hooks/useTheme";
@@ -7,6 +7,7 @@ import { StatusOrb } from "./orbs/StatusOrb";
 import { PatientPicker } from "./PatientPicker";
 import { RolePill } from "./RolePill";
 import { ThemeToggle } from "./ThemeToggle";
+import { HistoryMenu } from "./HistoryMenu";
 import { UsageMenu } from "./UsageMenu";
 
 interface Props {
@@ -17,9 +18,13 @@ interface Props {
   healthError: boolean;
   theme: Theme;
   onTheme: () => void;
+  session: string;                         // the conversation on screen
+  onOpenConversation: (sessionId: string) => void;
+  onNewConversation: () => void;
 }
 
-export function TopBar({ role, patient, onRole, health, healthError, theme, onTheme }: Props) {
+export function TopBar({ role, patient, onRole, health, healthError, theme, onTheme, session, onOpenConversation,
+  onNewConversation }: Props) {
   return (
     <header className="topbar">
       <div className="topbar__brand">
@@ -31,6 +36,8 @@ export function TopBar({ role, patient, onRole, health, healthError, theme, onTh
       </div>
       <div className="topbar__end">
         <StatusOrb health={health} error={healthError} />
+        <HistoryMenu role={role} patientId={patient?.id ?? null} current={session} onOpen={onOpenConversation}
+          onNew={onNewConversation} />
         <UsageMenu />
         <ThemeToggle theme={theme} onToggle={onTheme} />
       </div>

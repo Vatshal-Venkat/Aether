@@ -29,6 +29,9 @@ export default function App() {
         healthError={error}
         theme={theme}
         onTheme={toggle}
+        session={chat.sessionId}
+        onOpenConversation={chat.openConversation}
+        onNewConversation={chat.reset}
       />
       <main className="app__main">
         <div className="column">

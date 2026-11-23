@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -252,5 +252,43 @@ describe("clarification options in the conversation", () => {
     await waitFor(() => expect(askChat).toHaveBeenCalledTimes(2));
     expect(askChat.mock.calls[1][0].message).toBe("Insurers");
     expect(askChat.mock.calls[1][0].session_id).toBe(askChat.mock.calls[0][0].session_id); // same conversation
+  });
+});
+
+describe("past conversations", () => {
+  it("reopens a past conversation, and the next question continues it", async () => {
+    const list = vi.spyOn(client, "getConversations").mockResolvedValue([
+      { session_id: "old-1", title: "How many patients have diabetes?", questions: 1,
+        started_at: "2026-11-21T09:00:00Z", updated_at: "2026-11-21T09:00:00Z" }]);
+    const turns = vi.spyOn(client, "getConversation").mockResolvedValue([
+      { question: "How many patients have diabetes?", standalone: "How many patients have diabetes?",
+        answer: "There are **8** patients with diabetes.", kind: "answer", created_at: "2026-11-21T09:00:00Z" }]);
+    askChat.mockResolvedValue(answer("Abe and Bob."));
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Past conversations" }));
+    const list_ = await screen.findByRole("list", { name: "Past conversations" });
+    await userEvent.click(within(list_).getByRole("button", { name: /How many patients have diabetes/ }));
+    expect(turns).toHaveBeenCalledWith("old-1", "clinician", null);
+    expect(await screen.findByText("8")).toBeInTheDocument();  // the saved answer, rendered
+    expect(screen.getByText(/Saved answer/)).toBeInTheDocument();  // tables and SQL aren't kept
+    await ask("show their names");
+    await waitFor(() => expect(askChat).toHaveBeenCalled());
+    expect(askChat.mock.calls[0][0].session_id).toBe("old-1");   // follow-ups remember it
+    list.mockRestore();
+    turns.mockRestore();
+  });
+
+  it("New conversation clears the screen and starts a new session", async () => {
+    vi.spyOn(client, "getConversations").mockResolvedValue([]);
+    askChat.mockResolvedValue(answer("8."));
+    render(<App />);
+    await ask("first?");
+    await screen.findByText("8.");
+    await userEvent.click(screen.getByRole("button", { name: "Past conversations" }));
+    await userEvent.click(await screen.findByRole("button", { name: "New conversation" }));
+    expect(screen.queryByText("first?")).toBeNull();
+    await ask("second?");
+    await waitFor(() => expect(askChat).toHaveBeenCalledTimes(2));
+    expect(askChat.mock.calls[1][0].session_id).not.toBe(askChat.mock.calls[0][0].session_id);
   });
 });
