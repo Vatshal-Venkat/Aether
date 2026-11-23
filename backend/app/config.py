@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Reranker (app/rag/rerank.py): fetch a few more passages than needed, keep the ones that best answer the question
     rag_query_rewrite: bool = True  # also search with the router's label-wording rewrites of the question
     rag_max_rewrites: int = 2       # most rewrites searched per question (each one is another search)
+    # Threshold scoring: passages below the cut-off never reach the AI. Measured on our labels (2026-11-23): relevant
+    # passages scored -4.2 or more, off-topic ones -6.2 or less. Without the reranker, a looser distance cut-off.
+    rag_relevance_threshold: bool = True
+    rag_min_score: float = -5.0      # reranker score (higher = more relevant)
+    rag_max_distance: float = 0.75   # search distance, when the reranker is off (lower = closer)
     rag_rerank: bool = True
     rag_rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     rag_rerank_pool: int = 3            # candidates fetched per passage kept (3 -> 18 read for a top 6)

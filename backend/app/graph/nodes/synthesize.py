@@ -149,7 +149,7 @@ def synthesize(state: ChatState, deps: Deps) -> dict:
         return {"kind": "answer", "answer": NO_INDEX}
     if problem == "unknown_drug":
         return {"kind": "answer", "answer": UNKNOWN_DRUG}
-    if problem == "missing_section":
+    if problem in ("missing_section", "not_relevant"):
         return {"kind": "answer", "answer": state["rag_message"]}
     result = state.get("result")
     if result is not None:  # a database query ran (sql or hybrid)

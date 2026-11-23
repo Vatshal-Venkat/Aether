@@ -19,6 +19,11 @@ Query rewriting: people ask in everyday words ("while pregnant", "make me dizzy"
 wording; we search with the question AND those, merge the passages, and keep the best — judged against the
 person's own question. Saved with the route, so a repeated question searches exactly the same way.
 
+Threshold scoring: every passage gets a relevance score (the reranker's, or the search distance when it is off);
+passages below the cut-off are dropped, so the AI never reads a passage that doesn't answer the question. If a
+drug question has nothing left, we say so plainly ("the label doesn't say anything that answers this") instead
+of letting the AI stretch a loosely related passage into an answer.
+
 We also write a short note saying what was checked: which medicines, which sections, which labels
 have no such section, which medicines have no label at all, and whether some were left out (too
 many to read at once). Without it, the AI once answered "only lisinopril has a boxed warning"
@@ -107,6 +112,15 @@ def _search(deps: Deps, question: str, queries: list[str], drugs: list[str] | No
     return deps.reranker.rerank(question, candidates, k)
 
 
+def relevant(chunk, settings) -> bool:
+    """Above the relevance cut-off: the reranker's score when it ran, else the search distance."""
+    if not settings.rag_relevance_threshold:
+        return True
+    if chunk.score is not None:
+        return chunk.score >= settings.rag_min_score
+    return chunk.distance <= settings.rag_max_distance
+
+
 def _pool(settings, k: int, searches: int) -> int:
     """Candidates per search: rag_rerank_pool x k, but never more than the per-question cap allows."""
     return min(k * settings.rag_rerank_pool, max(k, settings.rag_rerank_max_candidates // max(1, searches)))
@@ -133,13 +147,16 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
         notes.append(f"No label in this library for: {', '.join(unlabeled)}.")
     if drugs:
         per_drug = max(1, min(settings.rag_per_drug_k, settings.rag_max_chunks // len(drugs)))
-        chunks, without = [], []
+        chunks, without, off_topic = [], [], []
         for d in drugs:
             found = _search(deps, question, queries, [d], per_drug, sections or None,
                             _pool(settings, per_drug, len(drugs) * len(queries)))
-            chunks += found
+            kept = [c for c in found if relevant(c, settings)]
+            chunks += kept
             if not found:
                 without.append(d)
+            elif not kept:
+                off_topic.append(d)
         if len(all_drugs) > len(drugs):
             notes.append(f"Only {len(drugs)} of {len(all_drugs)} medicines were looked up; not looked up: "
                          f"{', '.join(all_drugs[len(drugs):])}.")
@@ -147,6 +164,14 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
             notes.append(f"Checked the {_section_phrase(sections)} for: {', '.join(drugs)}.")
             if without:
                 notes.append(f"No {_section_phrase(sections)} in the labels of: {', '.join(without)}.")
+        if off_topic:
+            notes.append(f"Nothing in the labels of {', '.join(off_topic)} answers this question.")
+        if route.kind == "rag" and not chunks and off_topic and not without:
+            names = ", ".join(d.title() for d in off_topic)
+            many = len(off_topic) > 1
+            return {"chunks": [], "rag_problem": "not_relevant",
+                    "rag_message": f"I checked the FDA label{'s' if many else ''} for {names}, but "
+                                   f"{'they don' if many else 'it doesn'}'t say anything that answers this question."}
         if route.kind == "rag" and not chunks and sections:
             # e.g. "Does amoxicillin have a boxed warning?" — "its label has none" IS the answer (final review).
             names = ", ".join(d.title() for d in without)
@@ -161,8 +186,13 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
     elif route.drugs:
         return {"chunks": [], "rag_problem": "unknown_drug"}  # names only medicines we don't have
     else:
-        chunks = _search(deps, question, queries, None, settings.rag_top_k, sections or None,
-                         _pool(settings, settings.rag_top_k, len(queries)))
+        found = _search(deps, question, queries, None, settings.rag_top_k, sections or None,
+                        _pool(settings, settings.rag_top_k, len(queries)))
+        chunks = [c for c in found if relevant(c, settings)]
+        if found and not chunks and route.kind == "rag":
+            return {"chunks": [], "rag_problem": "not_relevant",
+                    "rag_message": "I searched the FDA drug labels in this library, but found nothing that answers "
+                                   "this question."}
     if deps.reranker is not None and chunks:
         chunks = sorted(chunks, key=lambda c: -(c.score or 0.0))  # best first across all medicines (stable)
 

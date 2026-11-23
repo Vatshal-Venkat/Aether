@@ -38,8 +38,13 @@ def clinical():
     return engine
 
 
+# The fake embedding's distances mean nothing, so the real relevance cut-off (tuned on real labels) is off here;
+# tests/graph/test_relevance_threshold.py tests it.
+NO_CUT_OFF = {"rag_relevance_threshold": False}
+
+
 def ask(llm, question, store, engines=None, role="clinician", patient_id=None):
-    return run_chat(make_deps(llm, engines=engines or {}, store=store), question, role, patient_id, "s")
+    return run_chat(make_deps(llm, engines=engines or {}, store=store, **NO_CUT_OFF), question, role, patient_id, "s")
 
 
 # --- rag ------------------------------------------------------------------------------------
@@ -173,7 +178,7 @@ def test_boxed_warning_question_searches_that_section(store, clinical):
 def test_capped_drug_list_is_reported(store, clinical):
     llm = ScriptedLLM(route("hybrid", ["clinical"]), "SELECT description FROM medications",
                       "Partial answer. Source: openFDA label: Lisinopril — Side effects")
-    deps = make_deps(llm, engines={"clinical": clinical}, store=store, rag_max_drugs=1)
+    deps = make_deps(llm, engines={"clinical": clinical}, store=store, rag_max_drugs=1, **NO_CUT_OFF)
     run_chat(deps, "What are the side effects of these medications?", "clinician", None, "s")
     assert "Only 1 of 2 medicines were looked up" in llm.prompt_text(2)
 

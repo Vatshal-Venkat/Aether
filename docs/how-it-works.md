@@ -360,6 +360,31 @@ A layer now sits around the pipeline (`backend/app/service.py`), the way a real 
     angioedema warning. bge-reranker-base was about 4× slower and no better.
   - **Cost:** about 0.7 s per drug question (live, the retrieve step took 1.3 s in total).
   - **Fallback:** if the model can't load, the search's own order is used. Turn it off with `RAG_RERANK=false`.
+- **Query rewriting** (added 2026-11-23; `retrieve.py` `search_queries`, router prompt). People ask in everyday words;
+  labels use medical ones ("unborn baby" vs "embryo-fetal toxicity", "swelling of the lips" vs "angioedema").
+  - **How:** the router, in the same AI call (no extra call, no extra quota), also writes 1-2 searches in label
+    wording (`RouteDecision.search_queries`). Retrieve searches with the question **and** those, drops passages found
+    twice, and keeps the best. The reranker judges them against the person's **own** question, so a bad rewrite
+    can't push in a passage that doesn't answer it. Medicine and section filters still apply to every search.
+  - **Same answer every time:** the rewrites are saved with the route in the saved queries, so a repeated question
+    searches exactly the same way. Changing the router prompt changed the rules version, so old saved queries are
+    not reused.
+  - **Live result:** "Which medicines can harm an unborn baby?" replaced an unrelated docetaxel passage with two
+    more fetal-toxicity warnings. Questions naming one medicine were already right and stayed the same.
+  - **Cost:** retrieve takes about 0.6-1 s longer (more passages to rerank; the 36-passage cap still holds).
+    Turn it off with `RAG_QUERY_REWRITE=false`; `RAG_MAX_REWRITES` (default 2) sets how many are used.
+- **Threshold scoring** (added 2026-11-23; `retrieve.py` `relevant`). Every passage has a relevance score: the
+  reranker's, or the search distance when the reranker is off. Passages below the cut-off never reach the AI and
+  aren't cited.
+  - **Cut-off −5.0 (reranker score), measured on our labels:** relevant passages scored −4.2 or more, even weak but useful
+    ones like diazepam "drowsiness" for "which drugs make you sleepy?". Off-topic ones scored −6.2 or less
+    ("does metformin help you learn guitar?", "capital of France?", "broken leg cast?").
+  - **Without the reranker:** distance cut-off 0.75 (looser, since distance separates the two less cleanly).
+  - **Nothing left:** a drug question says so plainly: "I checked the FDA label for Metformin, but it doesn't say
+    anything that answers this question." It does not let the AI stretch a loosely related passage into an answer.
+    A hybrid question still answers from the records, and the AI is told which labels had nothing relevant.
+  - Settings: `RAG_RELEVANCE_THRESHOLD=false` turns it off; `RAG_MIN_SCORE`, `RAG_MAX_DISTANCE` move the cut-offs.
+    The fake-embedding tests in `test_rag.py` switch it off; `test_relevance_threshold.py` tests it.
 - **Automatic charts** (`frontend/src/lib/chart.ts`, `Chart.tsx`).
   - **When:** a result of names + a number gets a **Chart** panel with bars. Dates or years + a number get a line.
   - **No chart** for a single number, repeated labels, or ids only. Ids, codes and rank columns are never plotted

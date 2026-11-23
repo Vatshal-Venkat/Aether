@@ -109,7 +109,7 @@ class ChatState(TypedDict, total=False):
     sources: list[str]
     unverified_numbers: list[str]
     chunks: list[Chunk]            # drug-label passages found by retrieve
-    rag_problem: str | None        # "no_index" | "unknown_drug" | "missing_section" | None
+    rag_problem: str | None        # "no_index" | "unknown_drug" | "missing_section" | "not_relevant" | None
     rag_message: str               # the fixed answer for "missing_section"
     rag_note: str                  # what retrieve checked (medicines, section, gaps) — shown to the AI
     saved_query: Any               # a SavedQuery (app/memory/saved_queries.py) reused for this question, or None

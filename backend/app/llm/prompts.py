@@ -88,7 +88,7 @@ Set "drugs" to the medicine names written in the question (empty list if none).
 For "rag" and "hybrid", set "search_queries" to 1-2 short searches for the FDA drug labels, written the way a label
 words it: medical terms instead of everyday words, and the label section if one fits (e.g. "can I take lisinopril
 while pregnant?" -> ["lisinopril use in pregnancy fetal toxicity"]; "does metformin make you dizzy?" ->
-["metformin dizziness adverse reactions"]). Keep every medicine name from the question. Empty for other kinds.
+["metformin dizziness adverse reactions"]). Keep every medicine name from the question; don't add the words "FDA", "drug" or "label". Empty for other kinds.
 Give a short "reason"."""
 
 
