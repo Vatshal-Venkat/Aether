@@ -14,6 +14,11 @@ With the reranker on (app/rag/rerank.py), each search fetches a few more passage
 reads each one together with the question and keeps the ones that answer it best, best first — so the AI reads
 the most relevant passage first ("can I take lisinopril while pregnant?" -> the fetal-toxicity warning).
 
+Query rewriting: people ask in everyday words ("while pregnant", "make me dizzy"); labels say "use in pregnancy",
+"fetal toxicity", "adverse reactions". The router (same AI call, no extra one) also writes 1-2 searches in label
+wording; we search with the question AND those, merge the passages, and keep the best — judged against the
+person's own question. Saved with the route, so a repeated question searches exactly the same way.
+
 We also write a short note saying what was checked: which medicines, which sections, which labels
 have no such section, which medicines have no label at all, and whether some were left out (too
 many to read at once). Without it, the AI once answered "only lisinopril has a boxed warning"
@@ -73,12 +78,32 @@ def _section_phrase(sections: list[str]) -> str:
     return f"{quoted} section{'s' if len(sections) > 1 else ''}"
 
 
-def _search(deps: Deps, question: str, drugs: list[str] | None, k: int, sections: list[str] | None,
-            pool: int) -> list:
-    """The k best passages: straight from the search, or (with the reranker) the best k of `pool` candidates."""
+def search_queries(question: str, route, settings) -> list[str]:
+    """The question first, then up to rag_max_rewrites of the router's label-wording rewrites (blank/repeats dropped)."""
+    queries = [question]
+    if settings.rag_query_rewrite:
+        seen = {question.strip().lower()}
+        for q in route.search_queries:
+            q = " ".join(str(q).split())[:200]
+            if q and q.lower() not in seen and len(queries) <= settings.rag_max_rewrites:
+                seen.add(q.lower())
+                queries.append(q)
+    return queries
+
+
+def _search(deps: Deps, question: str, queries: list[str], drugs: list[str] | None, k: int,
+            sections: list[str] | None, pool: int) -> list:
+    """The k best passages found by any of `queries`: the closest ones, or (with the reranker) the best k of the
+    candidates, judged against the person's question."""
+    fetch = k if deps.reranker is None else max(k, pool)
+    candidates, seen = [], set()
+    for q in queries:
+        for c in deps.store.search(q, drugs, fetch, sections=sections):
+            if (key := (c.drug, c.section, c.text)) not in seen:  # the same passage found twice counts once
+                seen.add(key)
+                candidates.append(c)
     if deps.reranker is None:
-        return deps.store.search(question, drugs, k, sections=sections)
-    candidates = deps.store.search(question, drugs, max(k, pool), sections=sections)
+        return sorted(candidates, key=lambda c: c.distance)[:k]  # stable: one search keeps the store's order
     return deps.reranker.rerank(question, candidates, k)
 
 
@@ -101,6 +126,7 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
     unlabeled += row_unlabeled
     drugs = all_drugs[: settings.rag_max_drugs]
     sections = section_of(question)
+    queries = search_queries(question, route, settings)
 
     notes: list[str] = []
     if unlabeled:
@@ -109,7 +135,8 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
         per_drug = max(1, min(settings.rag_per_drug_k, settings.rag_max_chunks // len(drugs)))
         chunks, without = [], []
         for d in drugs:
-            found = _search(deps, question, [d], per_drug, sections or None, _pool(settings, per_drug, len(drugs)))
+            found = _search(deps, question, queries, [d], per_drug, sections or None,
+                            _pool(settings, per_drug, len(drugs) * len(queries)))
             chunks += found
             if not found:
                 without.append(d)
@@ -134,7 +161,8 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
     elif route.drugs:
         return {"chunks": [], "rag_problem": "unknown_drug"}  # names only medicines we don't have
     else:
-        chunks = _search(deps, question, None, settings.rag_top_k, sections or None, _pool(settings, settings.rag_top_k, 1))
+        chunks = _search(deps, question, queries, None, settings.rag_top_k, sections or None,
+                         _pool(settings, settings.rag_top_k, len(queries)))
     if deps.reranker is not None and chunks:
         chunks = sorted(chunks, key=lambda c: -(c.score or 0.0))  # best first across all medicines (stable)
 

@@ -29,6 +29,9 @@ class RouteDecision(BaseModel):
     # Anything the router would have to assume or interpret to answer ("expensive = highest total cost"). Code turns
     # a non-empty list into a question to the person: Aether asks instead of assuming (decided 2026-11-20).
     assumptions: list[str] = []
+    # kind "rag"/"hybrid": 1-2 extra searches in the label's own wording ("while pregnant" -> "use in pregnancy fetal
+    # toxicity"), so the label search finds passages the person's everyday words miss (query rewriting).
+    search_queries: list[str] = []
 
 
 class SqlAttempt(TypedDict, total=False):

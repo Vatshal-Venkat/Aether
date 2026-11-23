@@ -94,6 +94,19 @@ def model_usage(deps: Deps = Depends(get_deps)) -> list[dict]:
     return [{**r, "name": r["model"].split("/")[-1]} for r in rows]
 
 
+@router.get("/sessions")
+def past_conversations(role: Literal["clinician", "patient"], patient_id: str | None = None,
+                       deps: Deps = Depends(get_deps)) -> list[dict]:
+    """This person's past conversations, newest first (the website's history list): the clinician view sees the
+    clinician's conversations, a patient only their own — never anyone else's. No login yet, so there is no
+    "everyone's history" view: it would show every patient's questions to whoever opened the site."""
+    if role == "patient" and not patient_id:
+        raise HTTPException(status_code=422, detail="patient_id is required when role is 'patient'")
+    if deps.memory is None:
+        return []
+    return [c.model_dump(mode="json") for c in deps.memory.sessions(role, patient_id if role == "patient" else None)]
+
+
 @router.get("/sessions/{session_id}")
 def session_history(session_id: str, role: Literal["clinician", "patient"], patient_id: str | None = None,
                     deps: Deps = Depends(get_deps)) -> list[dict]:

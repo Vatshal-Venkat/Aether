@@ -219,3 +219,17 @@ def test_result_pages_scoped(client):
     assert page["rows"][0] == [200] and len(page["rows"]) == 50 and page["pages"] == 3
     assert client.get(f"/api/results/{rid}", params={"page": 2, "role": "patient", "patient_id": "p1"}).status_code == 404
     assert client.get(f"/api/results/{rid}", params={"page": 9, "role": "clinician"}).status_code == 422
+
+
+def test_past_conversations_list_is_scoped_to_the_person(client, tmp_path):
+    from app.memory.store import ConversationStore, Turn
+    deps = client.app.dependency_overrides[get_deps]()
+    deps.memory = ConversationStore(tmp_path / "m2.sqlite")
+    for sid, role, pid, q in [("c1", "clinician", None, "How many?"), ("p1a", "patient", "p1", "My meds?"),
+                              ("p2a", "patient", "p2", "My visits?")]:
+        deps.memory.add(Turn(session_id=sid, role=role, patient_id=pid, question=q, standalone=q, answer="x", kind="answer"))
+    clin = client.get("/api/sessions", params={"role": "clinician"}).json()
+    assert [(c["session_id"], c["title"], c["questions"]) for c in clin] == [("c1", "How many?", 1)]
+    p1 = client.get("/api/sessions", params={"role": "patient", "patient_id": "p1"}).json()
+    assert [c["session_id"] for c in p1] == ["p1a"]
+    assert client.get("/api/sessions", params={"role": "patient"}).status_code == 422  # whose?

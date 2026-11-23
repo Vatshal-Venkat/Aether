@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     rag_max_drugs: int = 12     # most medicines looked up for one question
     rag_max_chunks: int = 18    # total passages budget for one answer
     # Reranker (app/rag/rerank.py): fetch a few more passages than needed, keep the ones that best answer the question
+    rag_query_rewrite: bool = True  # also search with the router's label-wording rewrites of the question
+    rag_max_rewrites: int = 2       # most rewrites searched per question (each one is another search)
     rag_rerank: bool = True
     rag_rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     rag_rerank_pool: int = 3            # candidates fetched per passage kept (3 -> 18 read for a top 6)

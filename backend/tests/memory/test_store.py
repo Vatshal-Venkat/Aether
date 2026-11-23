@@ -46,3 +46,37 @@ def test_long_answers_are_truncated(tmp_path):
 def test_survives_reopen(tmp_path):
     ConversationStore(tmp_path / "m.sqlite").add(turn(1))
     assert ConversationStore(tmp_path / "m.sqlite").history("s1", "clinician", None)[0].question == "q1"
+
+
+# --- past conversations (the website's history list) --------------------------------------------------------
+def test_full_answers_are_kept_for_the_history_view(tmp_path):
+    store = ConversationStore(tmp_path / "m.sqlite")
+    store.add(turn(1, answer="x" * 2000))
+    assert len(store.turns("s1")[0].answer) == 2000                     # shown in full when reopened
+    assert len(store.history("s1", "clinician", None)[0].answer) <= 400  # the AI's context stays short
+
+
+def test_past_conversations_newest_first_with_their_first_question(tmp_path):
+    store = ConversationStore(tmp_path / "m.sqlite")
+    store.add(turn(1, session="old"))
+    store.add(turn(2, session="old"))
+    store.add(turn(3, session="new"))
+    convs = store.sessions("clinician", None)
+    assert [c.session_id for c in convs] == ["new", "old"]
+    assert convs[1].title == "q1" and convs[1].questions == 2 and convs[1].updated_at >= convs[1].started_at
+
+
+def test_each_person_sees_only_their_own_conversations(tmp_path):
+    store = ConversationStore(tmp_path / "m.sqlite")
+    store.add(turn(1, session="c", role="clinician"))
+    store.add(turn(2, session="a", role="patient", patient="p1"))
+    store.add(turn(3, session="b", role="patient", patient="p2"))
+    assert [c.session_id for c in store.sessions("clinician", None)] == ["c"]
+    assert [c.session_id for c in store.sessions("patient", "p1")] == ["a"]
+    assert store.sessions("patient", "p3") == []
+
+
+def test_failed_turns_alone_do_not_make_a_conversation(tmp_path):
+    store = ConversationStore(tmp_path / "m.sqlite")
+    store.add(turn(1, session="broken", kind="error"))
+    assert store.sessions("clinician", None) == []
