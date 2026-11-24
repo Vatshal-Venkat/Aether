@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Leave empty to switch the fallback off.
     groq_fallback_model: str = "openai/gpt-oss-20b"
     # Fast lightweight model for classification/routing tasks (low latency).
-    groq_fast_model: str = "llama-3.1-8b-instant"
+    groq_fast_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
     ollama_base_url: str = "http://localhost:11434"

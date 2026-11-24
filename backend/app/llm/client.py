@@ -213,12 +213,13 @@ def get_chat_model(settings: Settings, ledger: UsageLedger | None = None) -> Run
 
 
 def get_fast_model(settings: Settings, ledger: UsageLedger | None = None) -> Runnable | None:
-    """A fast lightweight model (e.g. Groq llama-3.1-8b-instant) for classification/routing tasks."""
+    """A fast lightweight model (e.g. Groq 20b) for classification/routing tasks with primary fallbacks."""
     fast_name = getattr(settings, "groq_fast_model", "").strip()
     if settings.llm_provider == "groq" and fast_name and settings.groq_api_key:
         try:
             m = make_provider(settings, "groq", fast_name)
-            return build_chain([m], ledger=ledger)
+            models = [m] + [pm for pm in chat_models(settings) if model_name(pm) != fast_name]
+            return build_chain(models, ledger=ledger)
         except Exception:
             return None
     return None

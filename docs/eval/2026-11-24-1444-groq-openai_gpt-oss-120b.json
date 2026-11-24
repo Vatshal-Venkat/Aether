@@ -1,0 +1,55 @@
+{
+ "meta": {
+  "model": "groq / openai/gpt-oss-120b",
+  "started": "2026-11-24 14:44",
+  "repeat": 1,
+  "main_model": "openai/gpt-oss-120b"
+ },
+ "scores": [
+  {
+   "id": "XD02",
+   "category": "cross_db",
+   "question": "What is the total outstanding patient balance on claims for patients with diabetes?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 121.42,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "The total outstanding patient balance on claims for patients with diabetes is\u202f$211.38.  \nSource: billing_db.claims, clinical_db.conditions, clinical_db.patients",
+   "timings": {
+    "contextualize": 0.6949,
+    "route": 1.4591,
+    "plan": 1.9739999999999998,
+    "inject_schema": 0.0031,
+    "generate_sql": 13.1835,
+    "validate": 0.0418,
+    "row_filter": 0.0031,
+    "execute": 0.1371,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 9.6058,
+    "verify_numbers": 0.0002,
+    "fail": 94.322
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "I couldn't work out a query for that. Did you mean one of these?",
+   "reply": "Yes, use the usual meaning in the data.",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "gemini-2.5-flash"
+   ],
+   "run": 1,
+   "sql": [
+    "clinical: SELECT DISTINCT patients.id\nFROM patients\nJOIN conditions ON patients.id = conditions.patient\nWHERE conditions.description ILIKE '%diabetes%'\n  AND conditions.description NOT ILIKE 'Prediabetes%'",
+    "billing: SELECT COALESCE(SUM(outstandingp), 0) AS total_outstanding_patient_balance FROM (SELECT * FROM claims WHERE patientid IN ('007a32fb-33a3-6f75-2161-15a2ea6ed2bf', '0c1b260c-7f32-fdd5-15dd-1160caf24c2b', '10bb8914-0338-90ea-87ff-9231ff231563', '37cd4685-45ad-8602-7fff-2b04af9bc008', '492dfa32-d7b8-faf8-c7d9-ba12d95f82cd', '7fc5a38e-c3da-07c2-2015-d9802d305f0a', 'a88d8253-7b27-4746-bc0f-c41e671b6237', 'abbe7ce8-820b-cb76-8d0c-02fe9d9decb0')) AS claims LIMIT 1001"
+   ]
+  }
+ ]
+}

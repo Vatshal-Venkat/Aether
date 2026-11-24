@@ -1,0 +1,225 @@
+{
+ "meta": {
+  "model": "groq / openai/gpt-oss-120b",
+  "started": "2026-11-24 14:41",
+  "repeat": 1,
+  "main_model": "openai/gpt-oss-120b"
+ },
+ "scores": [
+  {
+   "id": "CL12",
+   "category": "clinical",
+   "question": "Which medication has been prescribed the most times?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 2.51,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "The medication prescribed the most times is **lisinopril\u202f10\u202fMG Oral Tablet**, with **380** prescriptions.\n\nSource: clinical_db.medications",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.8124,
+    "plan": 0.0,
+    "inject_schema": 0.001,
+    "generate_sql": 1.172,
+    "validate": 0.0286,
+    "row_filter": 0.0,
+    "execute": 0.0523,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.4431,
+    "verify_numbers": 0.0001
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": "",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+   ],
+   "run": 1,
+   "sql": [
+    "clinical: WITH med_counts AS (\n    SELECT\n        description,\n        COUNT(*) AS prescription_count\n    FROM medications\n    GROUP BY description\n)\nSELECT\n    description,\n    prescription_count\nFROM (\n    SELECT\n        description,\n        prescription_count,\n        RANK() OVER (ORDER BY prescription_count DESC) AS rnk\n    FROM med_counts\n) ranked\nWHERE rnk = 1\nORDER BY description"
+   ]
+  },
+  {
+   "id": "BI01",
+   "category": "billing",
+   "question": "Which insurance company has the most customers?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 2.24,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "Medicaid has the most customers, with **52** unique customers.\n\nSource: billing_db.payers",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.4925,
+    "plan": 0.0,
+    "inject_schema": 0.001,
+    "generate_sql": 1.005,
+    "validate": 0.0177,
+    "row_filter": 0.0,
+    "execute": 0.0044,
+    "next_step": 0.0001,
+    "merge": 0.0,
+    "synthesize": 0.7189,
+    "verify_numbers": 0.0001
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": "",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+   ],
+   "run": 1,
+   "sql": [
+    "billing: SELECT name, unique_customers\nFROM (\n    SELECT\n        name,\n        unique_customers,\n        RANK() OVER (ORDER BY unique_customers DESC) AS rnk\n    FROM payers\n) AS ranked_payers\nWHERE rnk = 1"
+   ]
+  },
+  {
+   "id": "BI02",
+   "category": "billing",
+   "question": "How many hospitals or clinics are in Boston?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 1.97,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "There are **14** hospitals or clinics located in Boston.\n\nSource: billing_db.organizations",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.509,
+    "plan": 0.0,
+    "inject_schema": 0.0005,
+    "generate_sql": 0.7246,
+    "validate": 0.0016,
+    "row_filter": 0.0,
+    "execute": 0.003,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.7293,
+    "verify_numbers": 0.0001
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": "",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+   ],
+   "run": 1,
+   "sql": [
+    "billing: SELECT COUNT(*) AS total_hospitals\nFROM organizations\nWHERE city = 'Boston'"
+   ]
+  },
+  {
+   "id": "XD02",
+   "category": "cross_db",
+   "question": "What is the total outstanding patient balance on claims for patients with diabetes?",
+   "correct": false,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [
+    "missing true value(s): 211.38"
+   ],
+   "seconds": 16.8,
+   "retries": 1,
+   "unverified": 0,
+   "answer": "The total outstanding patient balance on claims for patients with diabetes is **$845.52**.\n\nSource: clinical_db.conditions, clinical_db.patients, billing_db.claims, billing_db.claims_transactions",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.6648,
+    "plan": 1.4279,
+    "inject_schema": 0.0009,
+    "generate_sql": 13.7375,
+    "validate": 0.009,
+    "row_filter": 0.0053,
+    "execute": 0.3026,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.6482,
+    "verify_numbers": 0.0001
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": "",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+   ],
+   "run": 1,
+   "sql": [
+    "clinical: SELECT DISTINCT p.id\nFROM patients p\nJOIN conditions c ON p.id = c.patient\nWHERE c.description ILIKE '%diabetes%'\n  AND c.description NOT ILIKE 'prediabetes%'\n  AND c.description LIKE '%(disorder)'",
+    "billing (failed: Use the table claims_transactions in this query: only its rows matching step 1 are kept (by patientid).): SELECT COALESCE(SUM(c.outstandingp), 0) AS total_outstanding_patient_balance\nFROM claims AS c",
+    "billing: SELECT COALESCE(SUM(c.outstandingp), 0) AS total_outstanding_patient_balance FROM claims AS c JOIN (SELECT * FROM claims_transactions WHERE patientid IN ('007a32fb-33a3-6f75-2161-15a2ea6ed2bf', '0c1b260c-7f32-fdd5-15dd-1160caf24c2b', '10bb8914-0338-90ea-87ff-9231ff231563', '37cd4685-45ad-8602-7fff-2b04af9bc008', '492dfa32-d7b8-faf8-c7d9-ba12d95f82cd', '7fc5a38e-c3da-07c2-2015-d9802d305f0a', 'a88d8253-7b27-4746-bc0f-c41e671b6237', 'abbe7ce8-820b-cb76-8d0c-02fe9d9decb0')) AS ct ON ct.claimid = c.id LIMIT 1001"
+   ]
+  },
+  {
+   "id": "XD07",
+   "category": "cross_db",
+   "question": "Which patient owes us the most? Give the top 5.",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 33.01,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "**Top patients by amount owed**\n\n| Rank | Patient (prefix\u202ffirst\u202fmiddle\u202flast) | Total owed |\n|------|------------------------------------|------------|\n| 1 | Mr.\u202fRefugio197\u202fJeremy766\u202fDare640 | $2,313.07 |\n| 2 | Mr.\u202fIgnacio928\u202fEric487\u202fHartmann983 | $211.38 |\n| 3 (tied) | Mr.\u202fNapoleon578\u202fGottlieb798 | $42.28 |\n| 3 (tied) | Mr.\u202fLindsey52\u202fChang901\u202fCartwright189 | $42.28 |\n| 3 (tied) | Mrs.\u202fLenita591\u202fAmelia635\u202fRomaguera67 | $42.28 |\n| 3 (tied) |\u202fChantay958\u202fMao115\u202fSchuster709 | $42.28 |\n| 3 (tied) | Mrs.\u202fStarla601\u202fSydney660\u202fO'Connell601 | $42.28 |\n| 3 (tied) | Mrs.\u202fJaleesa813\u202fMarva153\u202fJohnson679 | $42.28 |\n| 3 (tied) | Mr.\u202fHumberto482\u202fRoger751\u202fKohler843 | $42.28 |\n\n*Rows\u202f3\u20119 are tied with the same amount owed ($42.28).*\n\nSource: billing_db.claims, clinical_db.patients",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.7289,
+    "plan": 1.0831,
+    "inject_schema": 0.001,
+    "generate_sql": 21.4628,
+    "validate": 0.0045,
+    "row_filter": 0.0023,
+    "execute": 0.0331,
+    "next_step": 0.0,
+    "merge": 0.0001,
+    "synthesize": 9.6964,
+    "verify_numbers": 0.0014
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": "",
+   "models": [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+   ],
+   "run": 1,
+   "sql": [
+    "billing: SELECT * FROM (SELECT c.patientid, COALESCE(SUM(c.outstandingp), 0) AS total_owed, RANK() OVER (ORDER BY COALESCE(SUM(c.outstandingp), 0) DESC) AS ranking FROM claims AS c WHERE c.outstandingp > 0 GROUP BY c.patientid) AS top_n WHERE ranking <= 5 ORDER BY ranking",
+    "clinical: SELECT id, prefix, first, middle, last, suffix, birthdate, deathdate, gender, race, ethnicity, address, city, state, county, zip FROM (SELECT * FROM patients WHERE id IN ('2571ad10-0831-bf71-4731-6f7c298b20c7', '10bb8914-0338-90ea-87ff-9231ff231563', '0f24196d-4714-8a74-e3f7-19010527f7bb', '2f3c8454-b3b8-bab6-0b8a-7c2da8723a62', '302b2f8f-6bb2-b242-d64d-ad27d469979f', '65cc56ef-1ffc-bfac-aa6f-fe828e6da128', '7c87af7a-02a0-d387-f6cd-9222e0559b77', 'e4f07ffe-9732-4495-2876-3829e3677829', 'f75ba0c0-3571-3d63-e40b-fbd8571ce025')) AS patients LIMIT 1001"
+   ]
+  }
+ ]
+}
