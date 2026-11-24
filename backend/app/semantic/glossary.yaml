@@ -43,7 +43,7 @@ columns:
   observations.type: "'numeric' or 'text' — says how to read value."
   observations.category: "laboratory, vital-signs, survey, social-history, exam, procedure, therapy, imaging."
   observations.units: Unit of the value (e.g. %, mg/dL, mm[Hg], kg).
-  medications.description: "Drug name and strength, e.g. 'amLODIPine 2.5 MG Oral Tablet'. One ROW per prescription period: long-term drugs are renewed again and again (one patient has 222 rows of the same drug). So 'how many medications' / 'most medications' means different medicines: COUNT(DISTINCT description), not COUNT(*)."
+  medications.description: "Drug name and strength, e.g. 'amLODIPine 2.5 MG Oral Tablet'. One ROW per prescription period: long-term drugs are renewed again and again. 'How many medications' means COUNT(DISTINCT description). 'Which medication has been prescribed the most times' / 'most commonly prescribed' means COUNT(*) grouped by description (or split_part(description, ' ', 1)) ORDER BY count(*) DESC LIMIT 1."
   medications.stop: NULL means the medication is still active.
   medications.code: RxNorm drug code.
   medications.totalcost: Total cost of all dispenses of this prescription.
@@ -52,14 +52,15 @@ columns:
   claims.patientid: Id of the patient — matches patients.id in clinical_db.
   claims.providerid: Id of the doctor — matches providers.id.
   claims.outstanding1: Amount still owed by the primary insurer.
-  claims.outstandingp: "Amount still owed by the patient. 'Who owes us the most' = SUM(outstandingp) per claims.patientid, keeping only totals > 0 (most balances are 0). Not patients.healthcare_expenses minus coverage."
+  claims.outstandingp: "Amount still owed by the patient. 'Who owes us the most' / 'outstanding patient balance' = SUM(claims.outstandingp) per patient, keeping only totals > 0 (most balances are 0). Not patients.healthcare_expenses minus coverage. Never use claims_transactions for patient balances."
   claims_transactions.type: "CHARGE, PAYMENT, ADJUSTMENT, TRANSFERIN, TRANSFEROUT."
   claims_transactions.amount: "Money amount of CHARGE and TRANSFERIN rows. EMPTY (NULL) on PAYMENT rows: the money paid is in claims_transactions.payments."
   claims_transactions.payments: "Amount paid, on rows with type = 'PAYMENT'."
-  claims_transactions.outstanding: "Running balance of one line item. Do NOT sum it for totals owed — use claims.outstandingp (patient) or claims.outstanding1 / outstanding2 (insurers)."
+  claims_transactions.outstanding: "Running balance of one line item. NEVER sum it for totals owed — use claims.outstandingp (patient) or claims.outstanding1 / outstanding2 (insurers). Not for patient balance calculations."
   providers.speciality: Medical speciality of the provider.
   providers.name: "Doctor's full name with Synthea digits, e.g. 'Emmaline88 Witting912'. Typed without the digits ('Emmaline Witting'): match with name LIKE 'Emmaline% Witting%'."
   payers.name: Insurer name (NO_INSURANCE means uninsured).
+  organizations.city: "City where the hospital or clinic itself is. 'Hospitals/clinics in Boston' = organizations WHERE city = 'Boston' (billing_db only) — not where its patients live."
   # Synthea's stored totals below were computed over its WHOLE simulation, not the records loaded here, and
   # they disagree with them (checked 2026-11-19). Count the real rows instead. (unique_customers does agree.)
   payers.covered_encounters: "Do not use (Synthea total that disagrees with our records). Visits an insurer paid for: count encounters rows per encounters.payer in clinical_db."
@@ -136,6 +137,14 @@ terms:
   - term: outstanding balance / balance / owe / owed / owes / money owed
     meaning: Money still unpaid on claims — by the patient (outstandingp) or by the primary/secondary insurer.
     sql_hint: "patient still owes: SUM(claims.outstandingp); insurers still owe: SUM(claims.outstanding1 + claims.outstanding2). Not claims_transactions.outstanding."
+    db: billing
+  - term: customer / customers / insurer customers / most customers / insurance company customers
+    meaning: Distinct patients covered by an insurance company.
+    sql_hint: "payers.unique_customers"
+    db: billing
+  - term: hospitals or clinics in / clinics in / hospitals in
+    meaning: Hospitals and clinics located in a city or town facility.
+    sql_hint: "organizations WHERE city = '<city>'"
     db: billing
 
 pii_columns:

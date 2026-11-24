@@ -83,3 +83,14 @@ def test_all_models_out_says_so_and_when_the_first_is_back(engine, tmp_path):
     # The accuracy report counts "rate-limited" answers as "not run", not wrong (report 2026-11-23 counted 3 as wrong).
     from app.eval.scoring import RATE_LIMITED
     assert RATE_LIMITED in result.answer
+
+
+# Report 2026-11-24: some answers came from the backup model and nobody could tell which. Every answer now
+# lists the models that wrote it, so the accuracy report can show them.
+def test_the_models_that_answered_are_recorded(engine, tmp_path):
+    main = run_chat(_deps(engine, tmp_path, [_model(MODELS[0], ANSWER)]), "How many patients?", "clinician", None, "s")
+    assert main.models_used == ["openai/gpt-oss-120b"]
+    (tmp_path / "b").mkdir()
+    backup = run_chat(_deps(engine, tmp_path / "b", [_model(MODELS[0], out=_limit(MODELS[0])), _model(MODELS[1], ANSWER)]),
+                      "How many patients?", "clinician", None, "t")
+    assert backup.models_used == ["openai/gpt-oss-20b"]

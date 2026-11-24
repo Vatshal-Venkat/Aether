@@ -164,6 +164,9 @@ class CaseScore(BaseModel):
     privacy_ok: bool | None = None    # did those checks hold
     asked_back: str = ""              # Aether's question back, if it asked one before answering
     reply: str = ""                   # what the test replied to it
+    models: list[str] = []            # the AI models that wrote this answer (a backup model is flagged)
+    run: int = 1                      # which repeat this was, when each question is asked several times
+    sql: list[str] = []               # every query tried, in order (kept out for privacy questions)
 
 
 def score_case(case: EvalCase, result: ChatResult, gold_rows: list[list[Any]],

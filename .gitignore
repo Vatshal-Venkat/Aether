@@ -17,3 +17,6 @@ __pycache__/
 .superpowers/
 frontend/node_modules/
 frontend/dist/
+
+# Generated knowledge graph (rebuild with /graphify)
+graphify-out/

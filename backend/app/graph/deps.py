@@ -32,3 +32,4 @@ class Deps:
     usage: UsageLedger | None = None                 # tokens used / limits per model (the "model limits" panel)
     saved_queries: SavedQueryStore | None = None   # same question -> same SQL (None = always write it afresh)
     reranker: Reranker | None = None                 # re-scores drug-label passages (None = keep the search order)
+    fast_llm: Runnable | None = None                 # fast model for routing/contextualizing (None = uses llm)

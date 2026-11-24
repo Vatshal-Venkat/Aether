@@ -101,20 +101,25 @@ def _search(deps: Deps, question: str, queries: list[str], drugs: list[str] | No
     """The k best passages found by any of `queries`: the closest ones, or (with the reranker) the best k of the
     candidates, judged against the person's question."""
     fetch = k if deps.reranker is None else max(k, pool)
-    candidates, seen = [], set()
-    for q in queries:
-        for c in deps.store.search(q, drugs, fetch, sections=sections):
-            if (key := (c.drug, c.section, c.text)) not in seen:  # the same passage found twice counts once
-                seen.add(key)
-                candidates.append(c)
+    if hasattr(deps.store, "search_batch"):
+        candidates = deps.store.search_batch(queries, drugs, fetch, sections=sections)
+    else:
+        candidates, seen = [], set()
+        for q in queries:
+            for c in deps.store.search(q, drugs, fetch, sections=sections):
+                if (key := (c.drug, c.section, c.text)) not in seen:  # the same passage found twice counts once
+                    seen.add(key)
+                    candidates.append(c)
     if deps.reranker is None:
         return sorted(candidates, key=lambda c: c.distance)[:k]  # stable: one search keeps the store's order
     return deps.reranker.rerank(question, candidates, k)
 
 
-def relevant(chunk, settings) -> bool:
-    """Above the relevance cut-off: the reranker's score when it ran, else the search distance."""
-    if not settings.rag_relevance_threshold:
+def relevant(chunk, settings, sections: list[str] | None = None) -> bool:
+    """Above the relevance cut-off: the reranker's score when it ran, else the search distance. A passage from a
+    section the question names ("does it have a boxed warning?") answers it whatever its wording: always kept —
+    accuracy report 2026-11-24 (HY02) lost three real boxed warnings that scored -6.6 to -9.8."""
+    if not settings.rag_relevance_threshold or (sections and chunk.section in sections):
         return True
     if chunk.score is not None:
         return chunk.score >= settings.rag_min_score
@@ -151,7 +156,7 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
         for d in drugs:
             found = _search(deps, question, queries, [d], per_drug, sections or None,
                             _pool(settings, per_drug, len(drugs) * len(queries)))
-            kept = [c for c in found if relevant(c, settings)]
+            kept = [c for c in found if relevant(c, settings, sections)]
             chunks += kept
             if not found:
                 without.append(d)
@@ -188,7 +193,7 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
     else:
         found = _search(deps, question, queries, None, settings.rag_top_k, sections or None,
                         _pool(settings, settings.rag_top_k, len(queries)))
-        chunks = [c for c in found if relevant(c, settings)]
+        chunks = [c for c in found if relevant(c, settings, sections)]
         if found and not chunks and route.kind == "rag":
             return {"chunks": [], "rag_problem": "not_relevant",
                     "rag_message": "I searched the FDA drug labels in this library, but found nothing that answers "

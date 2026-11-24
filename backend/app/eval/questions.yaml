@@ -85,7 +85,11 @@
 - id: CL12
   category: clinical
   role: clinician
-  question: What is the most commonly prescribed medication?
+  question: Which medication has been prescribed the most times?
+  note: >
+    Reworded 2026-11-24 from "the most commonly prescribed medication", which can fairly mean "prescribed to the
+    most patients" (sodium fluoride, 90 patients) as well as "most prescriptions" (lisinopril) — the gold counts
+    prescriptions.
   expect_route: sql
   gold: {db: clinical, sql: "SELECT split_part(description, ' ', 1) FROM medications GROUP BY description ORDER BY count(*) DESC LIMIT 1"}
 
@@ -106,6 +110,7 @@
   question: Which insurance company has the most customers?
   expect_route: sql
   gold: {db: billing, sql: "SELECT name FROM payers ORDER BY unique_customers DESC LIMIT 1"}
+  clarify_reply: The number of customers recorded for each insurance company.
 
 - id: BI02
   category: billing

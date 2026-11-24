@@ -30,7 +30,7 @@ from app.memory.store import ConversationStore, Turn
 from app.rag.rerank import load_reranker
 from app.rag.store import DrugLabelStore
 from app.llm.client import (MODELS_USED_KEY, LLMOutputError, _transient_errors, chat_models, daily_limit_rest,
-                            get_chat_model, model_name, usage_ledger)
+                            get_chat_model, get_fast_model, model_name, usage_ledger)
 from app.llm.prompts import CONTEXTUALIZE_SYSTEM, plan_system, route_system, sql_system
 from app.semantic.glossary import GLOSSARY_PATH, load_glossary
 
@@ -65,6 +65,7 @@ class ChatResult(BaseModel):
     documents: list[DocumentRef] = []
     timings: dict[str, float] = {}
     model_notice: str | None = None
+    models_used: list[str] = []  # every AI model that wrote part of this answer, in order
     saved_query: bool = False  # the SQL was reused from the first time this question was asked (same numbers)  # "gpt-oss-120b has used up its free daily limit, so ... the backup model ..."
 
 
@@ -75,6 +76,7 @@ def build_deps(settings: Settings) -> Deps:
     return Deps(
         settings=settings,
         llm=get_chat_model(settings, ledger),
+        fast_llm=get_fast_model(settings, ledger),
         models=[model_name(m) for m in chat_models(settings)],
         usage=ledger,
         catalog=build_catalog(engines, glossary),
@@ -198,7 +200,8 @@ def run_chat(deps: Deps, question: str, role: str, patient_id: str | None, sessi
     try:
         final = build_graph(deps).invoke(_initial_state(deps, question, role, patient_id, session_id),
                                          config={"configurable": {MODELS_USED_KEY: used}})
-        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used)})
+        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used),
+                                                  "models_used": list(dict.fromkeys(used))})
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         _log_failure(exc)
         result = ChatResult(kind="error", answer=friendly_error(exc, deps))
@@ -253,7 +256,8 @@ def stream_chat(deps: Deps, question: str, role: str, patient_id: str | None, se
                 if chunk["name"] == "contextualize" and not step_input.get("history"):
                     continue  # nothing to recall: the step does nothing, so don't announce it
                 yield {"event": "progress", "data": _progress(chunk["name"], step_input)}
-        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used)})
+        result = _package(final).model_copy(update={"model_notice": model_notice(deps, used),
+                                                  "models_used": list(dict.fromkeys(used))})
     except Exception as exc:  # noqa: BLE001 — the user gets a friendly message; details go to the log
         _log_failure(exc)
         result = ChatResult(kind="error", answer=friendly_error(exc, deps))

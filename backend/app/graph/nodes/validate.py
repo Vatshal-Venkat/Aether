@@ -33,10 +33,20 @@ def lookup_problem(sql: str, measures: list[str], own_columns: set[str]) -> str 
     return None
 
 
+RUNNING_BALANCE = re.compile(r"\bSUM\s*\(\s*(?:\w+\.)?outstanding\s*\)", re.IGNORECASE)
+RUNNING_BALANCE_ERROR = ("claims_transactions.outstanding is a running balance repeated on every line item: summing it "
+                         "counts the same money many times. For money still owed use claims.outstandingp (by the "
+                         "patient) or claims.outstanding1 + claims.outstanding2 (by insurers).")
+
+
 @timed("validate")
 def validate(state: ChatState, deps: Deps) -> dict:
     db = state["db"]
     attempts = [dict(a) for a in state["attempts"]]
+    # Accuracy report 2026-11-24 (XD02, XD07): the glossary says not to, the AI did it anyway (779,415.28 for 211.38).
+    if RUNNING_BALANCE.search(attempts[-1]["sql"]):
+        attempts[-1]["error"] = f"Rejected: {RUNNING_BALANCE_ERROR}"
+        return {"attempts": attempts, "final_sql": None}
     result = validate_sql(
         attempts[-1]["sql"],
         DIALECTS[db],

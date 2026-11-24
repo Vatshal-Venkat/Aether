@@ -56,6 +56,7 @@ def model_cached(repo: str) -> bool:
 
 
 def _onnx_scorer(repo: str) -> Scorer:
+    import os
     import numpy as np
     import onnxruntime as ort
     from huggingface_hub import hf_hub_download
@@ -64,7 +65,10 @@ def _onnx_scorer(repo: str) -> Scorer:
     tokenizer = Tokenizer.from_file(hf_hub_download(repo, TOKENIZER_FILE))
     tokenizer.enable_truncation(MAX_TOKENS)  # long passages: the start is read, the rest cut off
     tokenizer.enable_padding()
-    session = ort.InferenceSession(hf_hub_download(repo, MODEL_FILE), providers=["CPUExecutionProvider"])
+    opts = ort.SessionOptions()
+    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    opts.intra_op_num_threads = min(4, os.cpu_count() or 1)
+    session = ort.InferenceSession(hf_hub_download(repo, MODEL_FILE), sess_options=opts, providers=["CPUExecutionProvider"])
     wanted = {i.name for i in session.get_inputs()}
 
     def score(query: str, texts: Sequence[str]) -> list[float]:

@@ -147,13 +147,24 @@ class DrugLabelStore:
 
     def search(self, query: str, drugs: list[str] | None, k: int, sections: list[str] | None = None) -> list[Chunk]:
         """The k passages closest in meaning to `query`, optionally only from these drugs / these sections."""
+        return self.search_batch([query], drugs, k, sections=sections)
+
+    def search_batch(self, queries: list[str], drugs: list[str] | None, k: int,
+                     sections: list[str] | None = None) -> list[Chunk]:
+        """The closest passages for multiple queries, batched into one vector store call, deduplicated."""
+        if not queries:
+            return []
         conditions = (([{"drug": {"$in": list(drugs)}}] if drugs else [])
                       + ([{"section": {"$in": list(sections)}}] if sections else []))
         where = conditions[0] if len(conditions) == 1 else {"$and": conditions} if conditions else None
         kwargs = {"where": where} if where else {}
-        res = self.collection.query(query_texts=[query], n_results=k, **kwargs)
-        chunks = []
-        for text, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-            chunks.append(Chunk(text=text, drug=meta["drug"], section=meta["section"],
-                                source_url=meta["source_url"], distance=float(dist)))
+        res = self.collection.query(query_texts=queries, n_results=k, **kwargs)
+        chunks, seen = [], set()
+        for doc_list, meta_list, dist_list in zip(res["documents"], res["metadatas"], res["distances"]):
+            for text, meta, dist in zip(doc_list, meta_list, dist_list):
+                key = (meta["drug"], meta["section"], text)
+                if key not in seen:
+                    seen.add(key)
+                    chunks.append(Chunk(text=text, drug=meta["drug"], section=meta["section"],
+                                        source_url=meta["source_url"], distance=float(dist)))
         return chunks

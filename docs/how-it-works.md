@@ -707,6 +707,22 @@ drug labels, records + labels, a patient's own questions, privacy attacks and sa
   exam replies once like a person would — clicks "Yes, go ahead", or says what it meant (`clarify_reply` in the
   question file) — and marks the answer after that. The report shows *right straight away*, *right after one
   question back*, and *wrong*, plus a list of what Aether asked and what the exam replied.
+- **Asked several times** (added 24 Nov 2026). The AI doesn't write the same SQL every time (92% one day, 87% the
+  next, on the same code), so `--repeat 3` asks every question 3 times and the report says how many were right every
+  time, sometimes, or never. Each answer also records **which AI model wrote it**, and the report lists answers a
+  backup model helped with; the JSON keeps every SQL query tried (except for privacy questions).
+  Note: one full exam uses most of gpt-oss-120b's 200,000-token daily allowance, so repeat only the unstable
+  questions: `python -m scripts.run_eval --only XD02,XD07 --repeat 3`.
+
+**24 Nov 2026 — what the exam found, and the fixes:**
+
+| Found | Cause | Fixed |
+|---|---|---|
+| "Which of my medicines have a boxed warning?" found 1 of 5 | The score cut-off (23 Nov) dropped real boxed warnings scored −6.6 to −9.8 | A passage from the section the question names is always kept |
+| Balances of 779,415 / 131,652 instead of 211.38 / 2,313.07 | The AI summed `claims_transactions.outstanding`, a running balance repeated per line item, despite the glossary | The safety check now rejects that SUM and says which column to use |
+| "How much do I still owe?" → "No records found" for a patient who owes nothing | A total over no rows comes back empty | A single SUM over nothing is answered as 0; the SQL writer uses COALESCE(SUM(…), 0) |
+| "Hospitals in Boston": 32 instead of 14 | Counted hospitals Boston *patients* visited | Glossary: `organizations.city` is where the hospital is |
+| "Most commonly prescribed" — sodium fluoride (most patients) vs lisinopril (most prescriptions) | Two fair readings | The exam question now says "prescribed the most times" |
 - Two questions test features that don't exist yet (follow-ups, asking back) — shown, not scored.
 
 The report is saved as `docs/eval/<date>-<model>.md`, so runs can be compared over time or between AI models.

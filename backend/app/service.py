@@ -76,6 +76,17 @@ class ChatService:
     def _from_cache(self, key: tuple, question: str, role: str, patient_id: str | None,
                     session_id: str, started: float) -> ChatResult | None:
         hit = self.ops.cache.get(key)
+        if hit is None and self.deps.saved_queries is not None:
+            # Semantic cache lookup: if a cleanly reworded question was answered recently
+            try:
+                match = self.deps.saved_queries.similar(role, question, owner=patient_id)
+                if match and match.kind == "same":
+                    alt_key = self._key(match.question, role, patient_id)
+                    hit = self.ops.cache.get(alt_key)
+                    if hit is not None:
+                        hit = hit.model_copy(update={"standalone_question": match.question})
+            except Exception:  # noqa: BLE001
+                pass
         if hit is None:
             self.ops.metrics.cache_miss()
             return None

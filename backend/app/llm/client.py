@@ -212,6 +212,18 @@ def get_chat_model(settings: Settings, ledger: UsageLedger | None = None) -> Run
     return build_chain(chat_models(settings), ledger=ledger)
 
 
+def get_fast_model(settings: Settings, ledger: UsageLedger | None = None) -> Runnable | None:
+    """A fast lightweight model (e.g. Groq llama-3.1-8b-instant) for classification/routing tasks."""
+    fast_name = getattr(settings, "groq_fast_model", "").strip()
+    if settings.llm_provider == "groq" and fast_name and settings.groq_api_key:
+        try:
+            m = make_provider(settings, "groq", fast_name)
+            return build_chain([m], ledger=ledger)
+        except Exception:
+            return None
+    return None
+
+
 def _content(message) -> str:
     content = message.content
     if isinstance(content, list):  # some providers return a list of content parts

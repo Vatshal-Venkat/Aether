@@ -192,3 +192,24 @@ def test_an_empty_ai_reply_is_retried_once():
 def test_two_empty_replies_give_a_plain_message_not_nothing():
     out = synthesize(_state([[3]]), make_deps(ScriptedLLM("", "  ")))
     assert "table" in out["answer"].lower() and out["answer"].strip()
+
+
+# Accuracy report 2026-11-24 (PT02): "How much do I still owe?" for a patient who owes nothing ran
+# SUM(outstandingp) ... WHERE outstandingp > 0 -> [[None]] -> "No records found". A total over nothing is 0.
+def test_a_total_over_nothing_is_zero_not_no_records():
+    state = {**_state([[None]], columns=("total_outstanding",)), "question": "How much do I still owe?",
+             "final_sql": "SELECT SUM(outstandingp) AS total_outstanding FROM claims WHERE outstandingp > 0 LIMIT 1001"}
+    llm = ScriptedLLM("You owe $0.00 on your claims.\nSource: billing_db.claims")
+    out = synthesize(state, make_deps(llm))
+    assert out["answer"].startswith("You owe $0.00")
+    assert "| 0 |" in llm.prompt_text() or "0" in llm.prompt_text().split("Query results")[-1]
+
+
+def test_max_over_nothing_is_still_no_records():
+    state = {**_state([[None]], columns=("last_visit",)), "final_sql": "SELECT MAX(start) AS last_visit FROM encounters"}
+    assert synthesize(state, make_deps(ScriptedLLM()))["answer"].startswith("No records found")
+
+
+def test_sql_rules_say_totals_over_nothing_are_zero():
+    from app.llm.prompts import sql_system
+    assert "COALESCE(SUM(" in sql_system("MySQL", "patient")

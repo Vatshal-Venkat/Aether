@@ -86,3 +86,10 @@ def test_condition_type_suffix_explained():
     # "Medication review due (situation)" — it didn't know the bracket at the end is the type.
     note = load_glossary().columns["conditions.description"].lower()
     assert "(disorder)" in note and "(situation)" in note and "(finding)" in note
+
+
+def test_hospitals_in_a_city_means_where_the_hospital_is():
+    # Accuracy report 2026-11-24 (BI02): "hospitals or clinics in Boston" counted the 32 hospitals Boston PATIENTS
+    # visited (encounters joined to patients.city) instead of the 14 located in Boston.
+    hint = load_glossary().columns["organizations.city"]
+    assert "Boston" in hint and "not where its patients live" in hint

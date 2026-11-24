@@ -154,6 +154,7 @@ Rules:
 - observations.value is TEXT: when comparing or averaging numbers, use CAST(value AS NUMERIC) and filter type = 'numeric'.
 - Prefer readable output columns (names, descriptions, dates) over raw ids.
 - Use the glossary hints for medical terms.
+- Totals: write COALESCE(SUM(...), 0), so a total over no rows is 0 (e.g. nothing owed), not empty.
 - "Top N" / "most" questions: order by the measure, and keep rows tied with the N-th value, e.g. RANK() OVER
   (ORDER BY total DESC) AS rnk in a subquery, then WHERE rnk <= N ORDER BY rnk.
 - A question about patients ("which patients", "their names", "list the patients with X") returns ONE row per patient:

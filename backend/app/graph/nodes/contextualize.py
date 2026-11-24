@@ -38,7 +38,8 @@ def contextualize(state: ChatState, deps: Deps) -> dict:
         saved = deps.saved_queries.get(state["role"], follow_up_key(previous, typed))
         if saved is not None and saved.standalone:  # this follow-up after this question was answered before
             return {"question": saved.standalone, "original_question": typed, "saved_query": saved}
-    rewritten = ask_json(deps.llm, CONTEXTUALIZE_SYSTEM, contextualize_user(history, typed), Standalone).standalone.strip()
+    context_llm = deps.fast_llm or deps.llm
+    rewritten = ask_json(context_llm, CONTEXTUALIZE_SYSTEM, contextualize_user(history, typed), Standalone).standalone.strip()
     if not rewritten or rewritten == typed:
         return {}
     return {"question": rewritten, "original_question": typed}

@@ -91,7 +91,8 @@ def route(state: ChatState, deps: Deps) -> dict:
                                            clarify_question=SIMILAR_ASK.format(match.question), options=[YES, NO],
                                            option_questions={YES: match.question, NO: typed})}
     terms = [t.term for t in deps.glossary.terms]
-    decision = ask_json(deps.llm, route_system(state["role"], terms), state["question"], RouteDecision)
+    router_llm = deps.fast_llm or deps.llm
+    decision = ask_json(router_llm, route_system(state["role"], terms), state["question"], RouteDecision)
     if decision.kind == "clarify":  # keep only full questions for options actually offered
         decision = decision.model_copy(update={"option_questions": {
             o: q.strip() for o, q in decision.option_questions.items() if o in decision.options and q.strip()}})

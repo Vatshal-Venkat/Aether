@@ -15,6 +15,7 @@ a question that still can't run is reported as "not run" — never as a wrong an
 Run from backend/:  python -m scripts.run_eval                 (everything, ~5–10 minutes)
                     python -m scripts.run_eval --only CL01,XD01
                     python -m scripts.run_eval --category rag
+                    python -m scripts.run_eval --only XD02,XD07 --repeat 3   (ask each 3 times: how stable is it?)
 """
 
 import argparse
@@ -90,6 +91,9 @@ def run_cases(cases: list[EvalCase], ask: Callable[[EvalCase, str, str], ChatRes
             score.seconds = round(sum(timings.values()), 2)
             score.asked_back, score.reply = first.answer, reply
         score.timings = timings
+        score.models = list(dict.fromkeys([*(first.models_used if first else []), *result.models_used]))
+        if not case.privacy:
+            score.sql = [f"{r.db}{f' (failed: {r.error})' if r.error else ''}: {r.query}" for r in result.sql]
         scores.append(score)
         mark = "NOT RUN" if score.not_run else ("ok" if score.correct else "WRONG") + (" (asked)" if first else "")
         progress(f"[{i}/{len(cases)}] {case.id:5} {mark:13} {score.seconds:5.1f}s  {'; '.join(score.reasons)[:90]}")
@@ -102,14 +106,40 @@ def _pct(a: int, b: int) -> str:
     return f"{round(100 * a / b)}%" if b else "—"
 
 
+def _stability(scored: list[CaseScore], repeat: int) -> list[str]:
+    """Asked several times: how many questions were right every time, sometimes, never — and which ones wobble."""
+    by_id: dict[str, list[CaseScore]] = {}
+    for s in scored:
+        by_id.setdefault(s.id, []).append(s)
+    every = [i for i, runs in by_id.items() if all(r.correct for r in runs)]
+    never = [i for i, runs in by_id.items() if not any(r.correct for r in runs)]
+    some = [i for i in by_id if i not in every and i not in never]
+    n = len(by_id)
+    lines = ["| Questions | Count |", "|---|---|",
+             f"| Right every time | {len(every)} / {n} questions |",
+             f"| Right sometimes | {len(some)} / {n} questions |",
+             f"| Never right | {len(never)} / {n} questions |", ""]
+    if some or never:
+        lines += ["Not right every time:", "", "| Question | Right | Asked |", "|---|---|---|"]
+        for i in [*never, *some]:
+            runs = by_id[i]
+            lines.append(f"| {i} | {sum(r.correct for r in runs)} / {len(runs)} | {runs[0].question} |")
+        lines.append("")
+    return lines
+
+
 def render_report(scores: list[CaseScore], meta: dict) -> str:
     scored = [s for s in scores if not s.planned and not s.not_run]
     correct = sum(s.correct for s in scored)
+    repeat = meta.get("repeat", 1)
+    what = f"questions: {len(scores)}" if repeat == 1 else f"each question asked {repeat} times: {len(scores)} answers"
     lines = [f"# Aether accuracy report — {meta['started']}", "",
-             f"Model: `{meta['model']}` · questions: {len(scores)} "
+             f"Model: `{meta['model']}` · {what} "
              f"({len(scored)} scored, {sum(s.not_run for s in scores)} not run, "
              f"{sum(bool(s.planned) for s in scores)} planned features)", "",
              f"## Overall: **{correct} / {len(scored)} correct ({_pct(correct, len(scored))})**", ""]
+    if repeat > 1:
+        lines += _stability(scored, repeat)
     direct = sum(s.correct and not s.asked_back for s in scored)
     after = sum(s.correct and bool(s.asked_back) for s in scored)
     lines += ["| How | Questions |", "|---|---|",
@@ -155,12 +185,23 @@ def render_report(scores: list[CaseScore], meta: dict) -> str:
             if not s.privacy:  # never copied for privacy-checked questions
                 lines.append(f"  Aether asked: {' '.join(s.asked_back.split())[:220]}  ")
                 lines.append(f"  Test replied: {' '.join(s.reply.split())[:220]}")
+    main_model = meta.get("main_model") or meta["model"].split(" / ")[-1]
+    backup = [s for s in scored if any(m != main_model for m in s.models)]
+    if backup:
+        right = sum(s.correct for s in backup)
+        lines += ["", "## Answered with help from a backup model", "",
+                  f"{len(backup)} answers were written (partly) by a backup model after short rate limits on "
+                  f"`{main_model}`; {right} of them right.", ""]
+        for s in backup:
+            run = f" (run {s.run})" if repeat > 1 else ""
+            lines.append(f"- **{s.id}**{run} {'right' if s.correct else 'WRONG'} — {', '.join(s.models)}")
     wrong = [s for s in scored if not s.correct]
     lines += ["", "## Wrong answers", ""]
     if not wrong:
         lines.append("None.")
     for s in wrong:
-        lines.append(f"- **{s.id}** ({s.category}) — {s.question}  ")
+        run = f" run {s.run}" if repeat > 1 else ""
+        lines.append(f"- **{s.id}**{run} ({s.category}) — {s.question}  ")
         lines.append(f"  Why: {'; '.join(s.reasons) or 'see JSON'}  ")
         if not s.privacy:  # answers to privacy-checked questions are never copied into the report
             lines.append(f"  Answer: {' '.join(s.answer.split())[:220]}")
@@ -181,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--category")
     parser.add_argument("--pause", type=float, default=3.0, help="seconds between questions (free-tier pacing)")
     parser.add_argument("--out", default=str(REPO / "docs" / "eval"))
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="ask every question this many times (the AI doesn't write the same SQL every time)")
     args = parser.parse_args(argv)
 
     from app.graph.runner import build_deps, run_chat  # imported here: building deps connects to everything
@@ -205,20 +248,27 @@ def main(argv: list[str] | None = None) -> int:
     def pid(c: EvalCase) -> str | None:
         return people[c.patient] if c.patient else None
 
-    scores = run_cases(
-        cases,
-        ask=lambda c, session, question: run_chat(deps, question, c.role, pid(c), session),
-        gold=lambda c: compute_gold(c.gold, admin, pid(c)),
-        # privacy: names of everyone except the asking patient (clinicians: only SSNs are checked)
-        other_names=lambda c: [n for n in people if n != c.patient] if c.privacy and c.role == "patient" else [],
-        pause=args.pause,
-        progress=print,
-    )
+    scores: list[CaseScore] = []
+    for run in range(1, args.repeat + 1):  # each repeat starts fresh conversations
+        if args.repeat > 1:
+            print(f"--- run {run} of {args.repeat}")
+        for score in run_cases(
+            cases,
+            ask=lambda c, session, question: run_chat(deps, question, c.role, pid(c), session),
+            gold=lambda c: compute_gold(c.gold, admin, pid(c)),
+            # privacy: names of everyone except the asking patient (clinicians: only SSNs are checked)
+            other_names=lambda c: [n for n in people if n != c.patient] if c.privacy and c.role == "patient" else [],
+            pause=args.pause,
+            progress=print,
+        ):
+            score.run = run
+            scores.append(score)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stem = f"{started:%Y-%m-%d-%H%M}-{s.llm_provider}-{model.replace('/', '_')}"
-    meta = {"model": f"{s.llm_provider} / {model}", "started": f"{started:%Y-%m-%d %H:%M}"}
+    meta = {"model": f"{s.llm_provider} / {model}", "started": f"{started:%Y-%m-%d %H:%M}", "repeat": args.repeat,
+            "main_model": model}
     (out / f"{stem}.md").write_text(render_report(scores, meta), encoding="utf-8")
     raw = [sc.model_dump() | ({"answer": "(privacy question: not stored)"} if sc.privacy else {})
            for sc in scores]

@@ -132,3 +132,30 @@ def test_clinician_patient_id_is_ignored(tmp_path):
     s = svc(tmp_path)
     result = s.answer("List", "clinician", "p1", "s", runner=counting_runner(answer(rows=150)))
     assert s.ops.results.page(result.table.result_id, 2, owner=("clinician", None)) is not None
+
+
+def test_semantic_cache_hit_for_reworded_question(tmp_path):
+    from app.graph.state import RouteDecision
+    from app.memory.saved_queries import SavedQuery, SavedQueryStore
+
+    class FakeEmbed:
+        def __call__(self, texts):
+            out = []
+            for t in texts:
+                s = 1.0 if "how many patients have diabetes" in t.lower() else 0.88
+                out.append([s, (1 - s * s) ** 0.5])
+            return out
+
+    sq = SavedQueryStore(tmp_path / "sq.sqlite", "v1", FakeEmbed())
+    sq.save("clinician", "How many patients have diabetes?", SavedQuery(route=RouteDecision(kind="sql", databases=["clinical"]), plan=[], sql=[]))
+
+    deps = make_deps(ScriptedLLM(), saved_queries=sq)
+    s = ChatService(deps, ops(tmp_path))
+    run = counting_runner(answer("There are 8 patients with diabetes."))
+
+    first = s.answer("How many patients have diabetes?", "clinician", None, "s1", runner=run)
+    assert len(run.calls) == 1 and not first.cached
+
+    again = s.answer("Number of diabetic patients", "clinician", None, "s2", runner=run)
+    assert len(run.calls) == 1 and again.cached
+    assert again.answer == first.answer

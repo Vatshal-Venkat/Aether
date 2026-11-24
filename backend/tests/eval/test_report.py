@@ -130,3 +130,41 @@ def test_report_splits_right_straight_away_from_right_after_a_question_back():
     assert "| Right straight away | 1 / 3 (33%)" in md
     assert "| Right after one question back | 1 / 3 (33%)" in md
     assert "## Asked back first" in md and "Is that what you mean?" in md
+
+
+# Asked 2026-11-24: one run isn't a reliable measure (92% then 87% on the same code). Each question can be asked
+# several times; the report says how often each was right, and which AI model wrote each answer.
+def test_each_answer_records_the_models_that_wrote_it():
+    ask = lambda c, s, q: ChatResult(answer="99", kind="answer", route="sql", models_used=["openai/gpt-oss-20b"])  # noqa: E731
+    [score] = run_cases([case("A")], ask=ask, gold=lambda c: [[99]], other_names=lambda c: [], pause=0,
+                        sleep=lambda s: None)
+    assert score.models == ["openai/gpt-oss-20b"]
+
+
+def test_repeated_runs_report_how_often_each_question_was_right():
+    runs = [_score("A", "clinical", True, run=1), _score("A", "clinical", True, run=2), _score("A", "clinical", True, run=3),
+            _score("B", "billing", True, run=1), _score("B", "billing", False, run=2, reasons=["missing true value(s): 14"]),
+            _score("B", "billing", True, run=3, models=["openai/gpt-oss-20b"])]
+    md = render_report(runs, {"model": "openai/gpt-oss-120b", "started": "t", "repeat": 3})
+    assert "**5 / 6 correct (83%)**" in md
+    assert "| Right every time | 1 / 2 questions |" in md and "| Right sometimes | 1 / 2 questions |" in md
+    assert "| B | 2 / 3 |" in md                      # the unstable question is listed with its count
+    assert "run 2" in md and "missing true value(s): 14" in md
+    assert "backup model" in md and "gpt-oss-20b" in md
+
+
+def test_main_model_answers_are_not_flagged_as_backup():
+    md = render_report([_score("A", "clinical", True, models=["openai/gpt-oss-120b"])],
+                       {"model": "groq / openai/gpt-oss-120b", "started": "t", "main_model": "openai/gpt-oss-120b"})
+    assert "backup model" not in md
+
+
+def test_the_sql_that_ran_is_kept_except_for_privacy_questions():
+    from app.graph.runner import SqlRecord
+    reply = ChatResult(answer="99", kind="answer", route="sql",
+                       sql=[SqlRecord(db="billing", query="SELECT bad", error="no such column"),
+                            SqlRecord(db="billing", query="SELECT good")])
+    [plain, private] = run_cases([case("A"), case("P", privacy=True)], ask=lambda c, s, q: reply, gold=lambda c: [[99]],
+                                 other_names=lambda c: [], pause=0, sleep=lambda s: None)
+    assert plain.sql == ["billing (failed: no such column): SELECT bad", "billing: SELECT good"]
+    assert private.sql == []

@@ -81,3 +81,14 @@ def test_hybrid_keeps_answering_from_the_records_and_tells_the_ai_what_was_dropp
                     "result": rows}, deps)
     assert out["rag_problem"] is None and [c.drug for c in out["chunks"]] == ["lisinopril"]
     assert "Nothing in the labels of metformin answers this question." in out["rag_note"]
+
+
+# Accuracy report 2026-11-24 (HY02): "which of my medications have a boxed warning?" — lisinopril's, prasugrel's and
+# carbamazepine's boxed warnings scored -6.6, -8.3 and -9.8 and were dropped; only naproxen's (-4.3) was kept. When the
+# question names the section, a passage FROM that section answers it whatever its wording.
+def test_a_passage_from_the_section_the_question_names_is_kept_below_the_cut_off():
+    boxed = chunk("Fetal toxicity: stop when pregnancy is detected.", drug="lisinopril", section="Boxed warning")
+    deps = make_deps(None, store=Store([boxed]), reranker=Scores({boxed.text: -6.6}))
+    out = retrieve({"route": RouteDecision(kind="rag", drugs=["lisinopril"]),
+                    "question": "Does lisinopril have a boxed warning?"}, deps)
+    assert [c.text for c in out["chunks"]] == [boxed.text] and not out.get("rag_problem")

@@ -229,3 +229,23 @@ def test_lookup_step_may_not_use_step1_columns():
 def test_plain_lookup_passes():
     out = _lookup("SELECT id, name FROM providers")
     assert out["final_sql"] is not None and out["attempts"][-1]["error"] is None
+
+
+# Accuracy report 2026-11-24 (XD02, XD07): balances came out as 779,415.28 and 131,652.91 instead of 211.38 and
+# 2,313.07 — the AI summed claims_transactions.outstanding (a running balance repeated on every line item) although
+# the glossary says not to. Code now rejects it and the retry is told which column to use.
+def _single(sql):
+    from app.graph.nodes.validate import validate
+    plan = [PlanStep(db="billing", goal="balances")]
+    state = _state(plan=plan, link=None, attempts=[{"step": 0, "db": "billing", "sql": sql, "executed": None, "error": None}])
+    return validate(state, make_deps(ScriptedLLM()))
+
+
+def test_summing_the_line_item_running_balance_is_rejected():
+    out = _single("SELECT patientid, SUM(ct.outstanding) AS owed FROM claims_transactions ct GROUP BY patientid")
+    assert out["final_sql"] is None and "claims.outstandingp" in out["attempts"][-1]["error"]
+
+
+def test_summing_what_the_patient_still_owes_passes():
+    out = _single("SELECT patientid, SUM(outstandingp) AS owed FROM claims GROUP BY patientid")
+    assert out["final_sql"] is not None

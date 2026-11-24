@@ -142,6 +142,19 @@ def draft_answer(state: ChatState, deps: Deps, correction: str | None = None) ->
     return answer.strip() or EMPTY_REPLY
 
 
+TOTAL = re.compile(r"\bSUM\s*\(", re.IGNORECASE)
+NOT_A_TOTAL = re.compile(r"\b(?:MAX|MIN|AVG)\s*\(|\bGROUP\s+BY\b", re.IGNORECASE)
+
+
+def zero_total(sql: str, result: QueryResult) -> QueryResult | None:
+    """A single total over no rows comes back empty ([[None]]) but means 0 — "how much do I still owe?" for someone
+    who owes nothing (accuracy report 2026-11-24, PT02). MAX/MIN/AVG over nothing stays "no records"."""
+    if (len(result.rows) == 1 and all(v is None for v in result.rows[0]) and TOTAL.search(sql)
+            and not NOT_A_TOTAL.search(sql)):
+        return result.model_copy(update={"rows": [[0] * len(result.columns)]})
+    return None
+
+
 @timed("synthesize")
 def synthesize(state: ChatState, deps: Deps) -> dict:
     problem = state.get("rag_problem")
@@ -152,6 +165,9 @@ def synthesize(state: ChatState, deps: Deps) -> dict:
     if problem in ("missing_section", "not_relevant"):
         return {"kind": "answer", "answer": state["rag_message"]}
     result = state.get("result")
+    if result is not None and (zero := zero_total(state.get("final_sql") or "", result)) is not None:
+        state = {**state, "result": zero}
+        return {"kind": "answer", "answer": draft_answer(state, deps), "result": zero}
     if result is not None:  # a database query ran (sql or hybrid)
         all_empty = all(v is None for row in result.rows for v in row)  # e.g. max(date) over nothing -> [[None]]
         # No rows — but if drug-label passages were found (the question named the medicine), they can
