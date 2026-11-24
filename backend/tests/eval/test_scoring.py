@@ -197,3 +197,13 @@ def test_number_words_only_at_sentence_start():
     assert not numbers_match(2, "The two largest insurers are Medicaid (52) and Medicare (40).")
     assert numbers_match(2, "Two insurers qualify.")
     assert numbers_match(4, "Yes. Four female patients have it.")
+
+
+# Report 2026-11-23 (PT02): the true balance was 0 and the answer said so in words — marked wrong.
+def test_zero_said_in_words_counts_as_zero():
+    from app.eval.scoring import values_in_answer
+    for answer in ("You don't owe anything on your claims.", "You have no outstanding balance.",
+                   "Nothing is owed.", "Your balance is $0.00."):
+        assert values_in_answer([0.0], answer)[0], answer
+    assert not values_in_answer([0.0], "You owe $12.50.")[0]
+    assert not values_in_answer([5.0], "You don't owe anything.")[0]

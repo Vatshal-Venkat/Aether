@@ -97,7 +97,7 @@ terms:
     meaning: High blood pressure diagnosis.
     sql_hint: "conditions.description = 'Essential hypertension (disorder)'"
     db: clinical
-  - term: active medication
+  - term: active medication / current medication / currently taking / taking now
     meaning: A prescription that has not ended.
     sql_hint: "medications.stop IS NULL"
     db: clinical
@@ -113,6 +113,18 @@ terms:
     meaning: Any encounter with the healthcare system.
     sql_hint: "encounters table; filter encounterclass for a visit type"
     db: clinical
+  - term: emergency visit / emergency
+    meaning: A visit whose type is emergency.
+    sql_hint: "encounters.encounterclass = 'emergency'"
+    db: clinical
+  - term: insurer that paid for a visit / paid for a visit / paid for visits
+    meaning: The insurance company recorded as the payer of each visit.
+    sql_hint: "count encounters per encounters.payer (an insurer id; its name is payers.name in billing_db)"
+    db: clinical
+  - term: revenue / insurer revenue / insurance company revenue / hospital revenue
+    meaning: The revenue figure stored for each insurance company and for each hospital or clinic (whose revenue depends on what the question is about).
+    sql_hint: "insurers: payers.revenue; hospitals and clinics: organizations.revenue"
+    db: billing
   - term: visit cost
     meaning: What a visit was billed, and how much the insurer paid. Use for 'how much did my visit cost'.
     sql_hint: "encounters.total_claim_cost, encounters.payer_coverage"
@@ -121,7 +133,7 @@ terms:
     meaning: Authoritative money questions about claims, payments and balances come from billing_db.
     sql_hint: "paid: SUM(claims_transactions.payments) WHERE type = 'PAYMENT' (amount is NULL there); still owed: claims.outstanding1 / outstandingp"
     db: billing
-  - term: outstanding balance / balance / owe / owed
+  - term: outstanding balance / balance / owe / owed / owes / money owed
     meaning: Money still unpaid on claims — by the patient (outstandingp) or by the primary/secondary insurer.
     sql_hint: "patient still owes: SUM(claims.outstandingp); insurers still owe: SUM(claims.outstanding1 + claims.outstanding2). Not claims_transactions.outstanding."
     db: billing

@@ -76,9 +76,16 @@ def _decimals(value: float) -> int:
     return 0 if text.endswith(".0") else len(text.split(".")[1]) if "." in text else 0
 
 
+# A true value of 0 may be said in words ("you don't owe anything") — report 2026-11-23, PT02.
+ZERO_WORDS = re.compile(r"\b(?:nothing|zero|none|no (?:outstanding |remaining |unpaid )?(?:balance|amount)|"
+                        r"(?:don't|do not|doesn't|does not) owe)\b", re.IGNORECASE)
+
+
 def numbers_match(gold: float, answer: str) -> bool:
     """The gold value appears in the answer. Rounding is accepted only when the answer shows FEWER
     decimals than the true value ("211.4" for 211.38); "3.0" never stands for 3.1."""
+    if gold == 0 and ZERO_WORDS.search(normalise(answer).replace("’", "'")):
+        return True
     gold_dec = _decimals(gold)
     for value, shown in numbers_in(answer):
         if abs(value - gold) < 1e-9:
@@ -155,6 +162,8 @@ class CaseScore(BaseModel):
     route_checked: bool = True        # False when the question accepts any route (not counted in routing %)
     privacy: bool = False             # the question carries privacy checks
     privacy_ok: bool | None = None    # did those checks hold
+    asked_back: str = ""              # Aether's question back, if it asked one before answering
+    reply: str = ""                   # what the test replied to it
 
 
 def score_case(case: EvalCase, result: ChatResult, gold_rows: list[list[Any]],

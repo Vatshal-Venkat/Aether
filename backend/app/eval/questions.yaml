@@ -134,6 +134,7 @@
   question: Which insurance company has the highest revenue?
   expect_route: sql
   gold: {db: billing, sql: "SELECT name FROM payers ORDER BY revenue DESC LIMIT 1"}
+  clarify_reply: The revenue figure recorded for each insurance company.
 
 - id: BI06
   category: billing
@@ -172,6 +173,7 @@
     db: clinical
     sql: "SELECT payer FROM encounters GROUP BY payer ORDER BY count(*) DESC LIMIT 1"
     then: {db: billing, sql: "SELECT name FROM payers WHERE id IN :prev"}
+  clarify_reply: The insurance company recorded as the payer of each visit.
 
 - id: XD04
   category: cross_db
@@ -203,6 +205,7 @@
     sql: "SELECT patientid FROM claims GROUP BY patientid ORDER BY sum(outstandingp) DESC LIMIT 1"
     then: {db: clinical, sql: "SELECT first, last FROM patients WHERE id IN :prev"}
   must_contain: [["2313.07", "2,313.07"]]
+  clarify_reply: The patient with the largest outstanding balance on their claims.
   note: >
     Added 2026-11-19. The balance is in billing (claims.outstandingp), the name in clinical. A live run once had
     the name-lookup step invent its own "amount owed" (lifetime expenses minus coverage, 523,747.56) and rank by it.
@@ -421,17 +424,9 @@
   follow_up_of: CV01
   expect_route: sql
   gold: {db: billing, sql: "SELECT round(sum(revenue), 2), (SELECT name FROM payers ORDER BY revenue DESC LIMIT 1) FROM payers"}
+  clarify_reply: The revenue figure recorded for each insurance company.
   gold_check: any
   note: Picks an option after CV01's clarifying question. Two fair readings are accepted — the insurers' total revenue, or the insurer with the highest revenue.
-
-- id: CV03
-  category: conversation
-  role: clinician
-  question: How many of them are female?
-  follow_up_of: CL11
-  expect_route: sql
-  gold: {db: clinical, sql: "SELECT count(DISTINCT c.patient) FROM conditions c JOIN patients p ON p.id = c.patient WHERE c.description ILIKE '%diabetes%' AND c.description NOT ILIKE 'prediabetes%' AND p.gender = 'F'"}
-  note: Needs conversation memory ("them" = the diabetic patients from CL11).
 
 - id: CV05
   category: conversation
@@ -444,6 +439,16 @@
   note: >
     Added 2026-11-20. Once returned one row per patient per diabetes-related diagnosis (19 rows, 8 people) and said
     "19 patients" right after CL11 said 8. Now: one row per patient, and "N patients" is checked against the rows.
+    Kept before CV03 (2026-11-23): after "how many of them are female?", "their" rightly means the 4 women.
+
+- id: CV03
+  category: conversation
+  role: clinician
+  question: How many of them are female?
+  follow_up_of: CL11
+  expect_route: sql
+  gold: {db: clinical, sql: "SELECT count(DISTINCT c.patient) FROM conditions c JOIN patients p ON p.id = c.patient WHERE c.description ILIKE '%diabetes%' AND c.description NOT ILIKE 'prediabetes%' AND p.gender = 'F'"}
+  note: Needs conversation memory ("them" = the diabetic patients from CL11).
 
 - id: CV04
   category: conversation

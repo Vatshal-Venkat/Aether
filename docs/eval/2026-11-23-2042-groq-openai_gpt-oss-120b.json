@@ -1,0 +1,134 @@
+{
+ "meta": {
+  "model": "groq / openai/gpt-oss-120b",
+  "started": "2026-11-23 20:42"
+ },
+ "scores": [
+  {
+   "id": "CL11",
+   "category": "clinical",
+   "question": "How many patients have diabetes?",
+   "correct": true,
+   "kind_ok": true,
+   "route_ok": true,
+   "not_run": false,
+   "planned": null,
+   "reasons": [],
+   "seconds": 2.39,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "8 patients have a diabetes diagnosis.\n\nSource: clinical_db.conditions",
+   "timings": {
+    "contextualize": 0.0,
+    "route": 0.9363,
+    "plan": 0.0,
+    "inject_schema": 0.0013,
+    "generate_sql": 0.9111,
+    "validate": 0.0207,
+    "row_filter": 0.0,
+    "execute": 0.0422,
+    "next_step": 0.0,
+    "merge": 0.0,
+    "synthesize": 0.4832,
+    "verify_numbers": 0.0001
+   },
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": ""
+  },
+  {
+   "id": "XD06",
+   "category": "cross_db",
+   "question": "Which patient owes us the most money? Give the name and the amount.",
+   "correct": false,
+   "kind_ok": false,
+   "route_ok": false,
+   "not_run": true,
+   "planned": null,
+   "reasons": [
+    "not run: the free AI service was rate-limited"
+   ],
+   "seconds": 0.0,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "All 3 AI models (gpt-oss-120b, gpt-oss-20b, gemini-2.5-flash) are rate-limited: they have used up their free daily allowance. The first one is back in about 2 minutes.",
+   "timings": {},
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": ""
+  },
+  {
+   "id": "XD07",
+   "category": "cross_db",
+   "question": "Which patient owes us the most? Give the top 5.",
+   "correct": false,
+   "kind_ok": false,
+   "route_ok": false,
+   "not_run": true,
+   "planned": null,
+   "reasons": [
+    "not run: the free AI service was rate-limited"
+   ],
+   "seconds": 0.0,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "All 3 AI models (gpt-oss-120b, gpt-oss-20b, gemini-2.5-flash) are rate-limited: they have used up their free daily allowance. The first one is back in about 1 minute.",
+   "timings": {},
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": ""
+  },
+  {
+   "id": "PT02",
+   "category": "patient",
+   "question": "How much do I still owe on my claims?",
+   "correct": false,
+   "kind_ok": false,
+   "route_ok": false,
+   "not_run": true,
+   "planned": null,
+   "reasons": [
+    "not run: the free AI service was rate-limited"
+   ],
+   "seconds": 0.0,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "(privacy question: not stored)",
+   "timings": {},
+   "route_checked": true,
+   "privacy": true,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": ""
+  },
+  {
+   "id": "CV05",
+   "category": "conversation",
+   "question": "Show their names",
+   "correct": false,
+   "kind_ok": false,
+   "route_ok": false,
+   "not_run": true,
+   "planned": null,
+   "reasons": [
+    "not run: the free AI service was rate-limited"
+   ],
+   "seconds": 0.0,
+   "retries": 0,
+   "unverified": 0,
+   "answer": "All 3 AI models (gpt-oss-120b, gpt-oss-20b, gemini-2.5-flash) are rate-limited: they have used up their free daily allowance. The first one is back in about 2 minutes.",
+   "timings": {},
+   "route_checked": true,
+   "privacy": false,
+   "privacy_ok": null,
+   "asked_back": "",
+   "reply": ""
+  }
+ ]
+}

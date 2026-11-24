@@ -9,6 +9,8 @@ reply is right (an answer, a refusal...), and how to check the answer:
   * source_prefix — the citation that must be among the answer's documents;
   * privacy — the answer must not reveal another patient or an SSN-shaped value.
 Questions about features not built yet are marked `planned` and kept out of the overall score.
+If Aether asks back when an answer was expected, the test replies once, like a person would ("Yes, go ahead", or
+the case's clarify_reply), and scores the answer that follows.
 """
 
 from pathlib import Path
@@ -45,6 +47,7 @@ class EvalCase(BaseModel):
     privacy: bool = False
     planned: str | None = None                 # e.g. "Plan 4": shown, but not in the overall score
     follow_up_of: str | None = None            # asked in the same conversation as that case (memory)
+    clarify_reply: str | None = None           # what the asker says if Aether asks back (no "Yes, go ahead" button)
     note: str = ""
 
 

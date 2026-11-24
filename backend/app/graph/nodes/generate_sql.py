@@ -33,6 +33,15 @@ def extract_sql(text: str) -> str:
     return sql.strip().rstrip(";").strip()
 
 
+def step1_measures(state: ChatState) -> list[str]:
+    """In step 2 of a two-step plan: the columns step 1 worked out besides the link (figures such as a total).
+    When there are any, step 2 is only a lookup of names and details — code keeps step 1's figures."""
+    link, results = state.get("link"), state.get("step_results") or []
+    if not link or state.get("step", 0) == 0 or not results or results[0].result is None:
+        return []
+    return [c for c in results[0].result.columns if c.lower() != link.from_column.lower()]
+
+
 def link_notes(state: ChatState) -> list[str]:
     """What the AI must know about how this step connects to the other one."""
     link = state.get("link")
@@ -54,7 +63,7 @@ def link_notes(state: ChatState) -> list[str]:
     # Step 1 already produced the figures (a "rank, then look up names" plan): step 2 is only a lookup.
     # Live (2026-11-19): asked who owes the most, step 2 invented "amount_owed = expenses - coverage" and the
     # answer ranked by it instead of step 1's real balances.
-    measures = [c for c in previous.columns if c.lower() != link.from_column.lower()]
+    measures = step1_measures(state)
     if measures:
         notes.append(f"Step 1 already worked out: {', '.join(measures)} — those figures and their order are kept "
                      "by code. This step is a plain lookup of descriptive details (names, descriptions, dates) for "

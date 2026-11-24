@@ -158,7 +158,7 @@ def friendly_error(exc: Exception, deps: Deps | None = None) -> str:
         if all(backs):  # every model is resting: say so, and when the first one is back
             soonest = min(backs) - deps.usage.clock()
             names = ", ".join(map(_short, deps.models))
-            return (f"All {len(deps.models)} AI models ({names}) have used up their free daily allowance. "
+            return (f"All {len(deps.models)} AI models ({names}) are rate-limited: they have used up their free daily allowance. "
                     f"The first one is back in about {_minutes(soonest)}.")
     if is_rate_limit(exc):
         rest = daily_limit_rest(exc)  # every model is out for the day: say when the main one is back

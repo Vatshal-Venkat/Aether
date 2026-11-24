@@ -241,3 +241,49 @@ def test_assumption_text_is_tidied(engine, memory):
     result = run_chat(make_deps(ScriptedLLM(messy), engines={"clinical": engine}, memory=memory), EXPENSIVE,
                       "clinician", None, "t")
     assert "..".join(["cost", " Is"]) not in result.answer and "cost. Is that" in result.answer
+
+
+# Accuracy report 2026-11-23: 8 of 9 misses were questions back about words the data already defines
+# ("emergency = encounter type Emergency?", "current medications = no stop date?"). Those are not the person's call.
+def _assuming(*assumptions):
+    return json.dumps({"kind": "sql", "databases": ["clinical"], "reason": "x", "assumptions": list(assumptions)})
+
+
+def test_a_term_the_data_defines_is_not_asked_about(engine, memory):
+    llm = ScriptedLLM(_assuming("emergency = visits where the encounter type is 'Emergency'"),
+                      "SELECT count(*) AS n FROM patients", "There were 2.")
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory),
+                      "How many emergency visits were there?", "clinician", None, "s")
+    assert result.kind == "answer"
+
+
+def test_only_meanings_the_data_does_not_define_are_asked_about(engine, memory):
+    llm = ScriptedLLM(_assuming("current medications = prescriptions with no stop date",
+                                "expensive = the highest total claim cost"))
+    result = run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory),
+                      "Which current medications are expensive?", "clinician", None, "s")
+    assert result.kind == "clarification"
+    assert "expensive = the highest total claim cost" in result.answer and "current medications" not in result.answer
+
+
+def test_router_is_told_which_terms_the_data_defines(engine, memory):
+    llm = ScriptedLLM(ROUTE_SQL, "SELECT count(*) AS n FROM patients", "There are 2 patients.")
+    run_chat(make_deps(llm, engines={"clinical": engine}, memory=memory), "How many patients?", "clinician", None, "s")
+    rules = llm.prompt_text(0)
+    for term in ("emergency visit", "current medication", "insurer revenue", "outstanding balance"):
+        assert term in rules, term
+
+
+@pytest.mark.parametrize("assumption, defined", [
+    ("emergency = visits where the encounter type is 'Emergency'", True),
+    ("current medications = no stop date", True),
+    ("outstanding patient balance = claims.outstandingp", True),
+    ("diabetes = a diabetes diagnosis", True),
+    ("expensive visits = the highest claim cost", False),   # "visit" is defined, "expensive" is not
+    ("recent = the last 12 months", False),
+    ("no equals sign here", False),
+])
+def test_which_assumptions_the_glossary_already_answers(assumption, defined):
+    from app.graph.nodes.route import defined_by_glossary
+    from app.semantic.glossary import load_glossary
+    assert defined_by_glossary(assumption, [t.term for t in load_glossary().terms]) is defined

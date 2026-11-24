@@ -1,9 +1,10 @@
-"""The accuracy report: ask Aether ~46 fixed questions and score every answer against the truth.
+"""The accuracy report: ask Aether ~50 fixed questions and score every answer against the truth.
 
 Plain English:
   1. Load the test questions (app/eval/questions.yaml).
   2. For each, compute the TRUE answer with our own trusted SQL on the admin account.
   3. Ask Aether the question through the real pipeline, exactly as the website would.
+     If Aether asks back instead of answering, reply once like a person would and use the answer after that.
   4. Score by code (app/eval/scoring.py): right kind of reply? right route? true values present?
      privacy kept? No AI is used to judge.
   5. Write a dated report to docs/eval/ (markdown to read, JSON with every detail).
@@ -42,27 +43,56 @@ def _rate_limited(r: ChatResult) -> bool:
     return r.kind == "error" and RATE_LIMITED in r.answer
 
 
-def run_cases(cases: list[EvalCase], ask: Callable[[EvalCase, str], ChatResult], gold: Callable[[EvalCase], list],
+GO_AHEAD = "Yes, go ahead"
+DEFAULT_REPLY = "Yes, use the usual meaning in the data."
+
+
+def reply_to(case: EvalCase, asked: ChatResult) -> str:
+    """What a person would answer to Aether's question back: click "Yes, go ahead" (the website then sends the
+    question with the assumption spelled out), or say what they meant (the case's clarify_reply)."""
+    if GO_AHEAD in asked.options and asked.option_questions.get(GO_AHEAD):
+        return asked.option_questions[GO_AHEAD]
+    return case.clarify_reply or DEFAULT_REPLY
+
+
+def run_cases(cases: list[EvalCase], ask: Callable[[EvalCase, str, str], ChatResult], gold: Callable[[EvalCase], list],
               other_names: Callable[[EvalCase], list[str]], pause: float = 3.0, wait: float = 65.0,
               max_retries: int = 2, sleep: Callable[[float], None] = time.sleep,
               progress: Callable[[str], None] = lambda s: None) -> list[CaseScore]:
     sessions: dict[str, str] = {}
     scores: list[CaseScore] = []
-    for i, case in enumerate(cases, 1):
-        session = sessions.get(case.follow_up_of or "", str(uuid.uuid4()))
-        sessions[case.id] = session
-        result = ask(case, session)
+
+    def asked(case: EvalCase, session: str, question: str) -> ChatResult:
+        result = ask(case, session, question)
         for _ in range(max_retries):
             if not _rate_limited(result):
                 break
             progress(f"  {case.id}: rate-limited, waiting {wait:.0f} s…")
             sleep(wait)
-            result = ask(case, session)
+            result = ask(case, session, question)
+        return result
+
+    for i, case in enumerate(cases, 1):
+        session = sessions.get(case.follow_up_of or "", str(uuid.uuid4()))
+        sessions[case.id] = session
+        result = asked(case, session, case.question)
+        first, reply = None, ""
+        if result.kind == "clarification" and case.expect_kind == "answer":
+            # Asking back is not a wrong answer: reply once, as a person would, and score what comes next.
+            first, reply = result, reply_to(case, result)
+            sleep(pause)
+            result = asked(case, session, reply)
         score = score_case(case, result, gold(case) if case.gold else [], other_names(case))
-        score.timings = dict(result.timings)
+        timings = dict(result.timings)
+        if first is not None:
+            for step, t in first.timings.items():
+                timings[step] = timings.get(step, 0.0) + t
+            score.seconds = round(sum(timings.values()), 2)
+            score.asked_back, score.reply = first.answer, reply
+        score.timings = timings
         scores.append(score)
-        mark = "NOT RUN" if score.not_run else ("ok" if score.correct else "WRONG")
-        progress(f"[{i}/{len(cases)}] {case.id:5} {mark:7} {score.seconds:5.1f}s  {'; '.join(score.reasons)[:90]}")
+        mark = "NOT RUN" if score.not_run else ("ok" if score.correct else "WRONG") + (" (asked)" if first else "")
+        progress(f"[{i}/{len(cases)}] {case.id:5} {mark:13} {score.seconds:5.1f}s  {'; '.join(score.reasons)[:90]}")
         if i < len(cases):
             sleep(pause)
     return scores
@@ -80,6 +110,14 @@ def render_report(scores: list[CaseScore], meta: dict) -> str:
              f"({len(scored)} scored, {sum(s.not_run for s in scores)} not run, "
              f"{sum(bool(s.planned) for s in scores)} planned features)", "",
              f"## Overall: **{correct} / {len(scored)} correct ({_pct(correct, len(scored))})**", ""]
+    direct = sum(s.correct and not s.asked_back for s in scored)
+    after = sum(s.correct and bool(s.asked_back) for s in scored)
+    lines += ["| How | Questions |", "|---|---|",
+              f"| Right straight away | {direct} / {len(scored)} ({_pct(direct, len(scored))}) |",
+              f"| Right after one question back | {after} / {len(scored)} ({_pct(after, len(scored))}) |",
+              f"| Wrong | {len(scored) - correct} / {len(scored)} ({_pct(len(scored) - correct, len(scored))}) |", "",
+              "When Aether asks back where an answer was expected, the test replies once like a person would "
+              "(clicks \"Yes, go ahead\", or says what it meant) and scores the answer after that.", ""]
 
     sql = [s for s in scored if s.category in SQL_CATEGORIES]
     routed = [s for s in scored if s.route_checked]  # questions that accept any route are not counted
@@ -109,6 +147,14 @@ def render_report(scores: list[CaseScore], meta: dict) -> str:
         for step, ts in sorted(steps.items(), key=lambda kv: -statistics.median(kv[1])):
             lines.append(f"| {step} | {statistics.median(ts):.2f} s | {len(ts)} |")
 
+    asked = [s for s in scored if s.asked_back]
+    if asked:
+        lines += ["", "## Asked back first", ""]
+        for s in asked:
+            lines.append(f"- **{s.id}** {'right' if s.correct else 'WRONG'} — {s.question}  ")
+            if not s.privacy:  # never copied for privacy-checked questions
+                lines.append(f"  Aether asked: {' '.join(s.asked_back.split())[:220]}  ")
+                lines.append(f"  Test replied: {' '.join(s.reply.split())[:220]}")
     wrong = [s for s in scored if not s.correct]
     lines += ["", "## Wrong answers", ""]
     if not wrong:
@@ -161,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
 
     scores = run_cases(
         cases,
-        ask=lambda c, session: run_chat(deps, c.question, c.role, pid(c), session),
+        ask=lambda c, session, question: run_chat(deps, question, c.role, pid(c), session),
         gold=lambda c: compute_gold(c.gold, admin, pid(c)),
         # privacy: names of everyone except the asking patient (clinicians: only SSNs are checked)
         other_names=lambda c: [n for n in people if n != c.patient] if c.privacy and c.role == "patient" else [],

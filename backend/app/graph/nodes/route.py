@@ -48,6 +48,23 @@ def names_another_patient(question: str, patient_names: dict[str, str], self_id:
     return False
 
 
+def _stems(text: str) -> set[str]:
+    return {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower())}
+
+
+FILLER = _stems("a an the of for on in patient total number count most highest largest top us we our money amount")
+
+
+def defined_by_glossary(assumption: str, terms: list[str]) -> bool:
+    """Is this assumption ("current medications = no stop date") only about a word the glossary already defines?
+    Only the part before "=" counts: it must be one of a term's names plus filler words — "expensive visits" is
+    still asked about, though "visit" is defined, because "expensive" is the person's call."""
+    if "=" not in assumption:
+        return False
+    word = _stems(assumption.split("=", 1)[0])
+    return any((name := _stems(n)) and name <= word and word - name <= FILLER for t in terms for n in t.split("/"))
+
+
 @timed("route")
 def route(state: ChatState, deps: Deps) -> dict:
     # Check what the person typed AND the rewritten follow-up: a rewrite can drop Synthea's digits
@@ -73,10 +90,14 @@ def route(state: ChatState, deps: Deps) -> dict:
             return {"route": RouteDecision(kind="clarify", reason=f"similar to a saved question ({match.score})",
                                            clarify_question=SIMILAR_ASK.format(match.question), options=[YES, NO],
                                            option_questions={YES: match.question, NO: typed})}
-    decision = ask_json(deps.llm, route_system(state["role"]), state["question"], RouteDecision)
+    terms = [t.term for t in deps.glossary.terms]
+    decision = ask_json(deps.llm, route_system(state["role"], terms), state["question"], RouteDecision)
     if decision.kind == "clarify":  # keep only full questions for options actually offered
         decision = decision.model_copy(update={"option_questions": {
             o: q.strip() for o, q in decision.option_questions.items() if o in decision.options and q.strip()}})
+    # A word the glossary defines ("emergency", "current medications") is not the person's call: don't ask about it.
+    decision = decision.model_copy(update={"assumptions": [
+        a for a in decision.assumptions if not defined_by_glossary(a, terms)]})
     if (decision.kind in ("sql", "hybrid", "rag") and decision.assumptions
             and not assumption_accepted(state.get("history") or [], typed)):
         # The router would have to assume something the person didn't say: ask them instead of guessing.

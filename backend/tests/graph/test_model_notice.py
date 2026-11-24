@@ -78,5 +78,8 @@ def test_all_models_out_says_so_and_when_the_first_is_back(engine, tmp_path):
                                     _model(MODELS[2], out=_limit(MODELS[2], "30m"))])
     result = run_chat(deps, "How many patients?", "clinician", None, "s")
     assert result.kind == "error"
-    assert result.answer == ("All 3 AI models (gpt-oss-120b, gpt-oss-20b, gemini-2.5-flash) have used up their "
-                             "free daily allowance. The first one is back in about 5 minutes.")
+    assert result.answer == ("All 3 AI models (gpt-oss-120b, gpt-oss-20b, gemini-2.5-flash) are rate-limited: they "
+                             "have used up their free daily allowance. The first one is back in about 5 minutes.")
+    # The accuracy report counts "rate-limited" answers as "not run", not wrong (report 2026-11-23 counted 3 as wrong).
+    from app.eval.scoring import RATE_LIMITED
+    assert RATE_LIMITED in result.answer

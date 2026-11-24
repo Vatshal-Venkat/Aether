@@ -203,3 +203,29 @@ def test_step2_notes_say_step1_conditions_already_applied():
     state = {**_state(step=1, step_results=[_step1_result(["d1"])]), "schema_text": "TABLE providers"}
     generate_sql(state, make_deps(llm))
     assert "already" in llm.prompt_text() and "do not repeat" in llm.prompt_text().lower()
+
+
+# --- validate: a lookup step after a ranking ------------------------------------------------
+# Accuracy report 2026-11-23 (XD06): told "this step is a plain lookup", the AI still re-computed the amount owed
+# (16,946 from visit costs instead of step 1's 2,313.07) or selected step 1's column, which this database lacks.
+# Code now rejects both, so the retry gets a clear reason.
+def _lookup(sql):
+    from app.graph.nodes.validate import validate
+    state = _state(step=1, step_results=[_step1_result(["d1", "d2"])],
+                   attempts=[{"step": 1, "db": "billing", "sql": sql, "executed": None, "error": None}])
+    return validate(state, make_deps(ScriptedLLM()))
+
+
+def test_lookup_step_may_not_compute_amounts():
+    out = _lookup("SELECT id, name, COUNT(*) AS visits FROM providers GROUP BY id, name")
+    assert out["final_sql"] is None and "only looks up" in out["attempts"][-1]["error"]
+
+
+def test_lookup_step_may_not_use_step1_columns():
+    out = _lookup("SELECT id, name, n FROM providers")
+    assert out["final_sql"] is None and "n" in out["attempts"][-1]["error"]
+
+
+def test_plain_lookup_passes():
+    out = _lookup("SELECT id, name FROM providers")
+    assert out["final_sql"] is not None and out["attempts"][-1]["error"] is None

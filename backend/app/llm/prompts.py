@@ -10,7 +10,8 @@ DATABASES_DESCRIPTION = """\
   insurance companies (payers), which insurer covered which patient when (payer_transitions),
   insurance claims and their line items (claims, claims_transactions: charges, payments, balances owed).
 A question may need BOTH, e.g. "which doctor saw the most patients, by name" (visits are in clinical,
-doctor names in billing) -> databases ["clinical", "billing"]."""
+doctor names in billing) -> databases ["clinical", "billing"]. Patient names are only in clinical, so "which patients
+owe the most?" (balances in billing, names in clinical) -> databases ["billing", "clinical"]."""
 
 
 DRUG_LABELS_DESCRIPTION = """\
@@ -42,7 +43,7 @@ def contextualize_user(history: list[dict], latest: str) -> str:
     return f"Conversation so far:\n{turns}\n\nLatest message: {latest}"
 
 
-def route_system(role: str) -> str:
+def route_system(role: str, defined_terms: list[str] = ()) -> str:
     patient_rules = ""
     if role == "patient":
         patient_rules = """
@@ -55,6 +56,10 @@ The user is in PATIENT MODE: they may only ask about THEIR OWN records.
 - General medicine questions ("what is lisinopril for?") are fine -> "rag"; "side effects of MY medications" -> "hybrid"."""
     else:
         patient_rules = "\nThe user is a CLINICIAN and may ask about any patient or across all patients."
+    defined = ""
+    if defined_terms:  # from the glossary: asking "emergency = encounter type Emergency?" helps nobody (report 2026-11-23)
+        defined = ("Words the data already defines — never list them in \"assumptions\" and never ask about them: "
+                   + "; ".join(defined_terms) + ".\n")
     return f"""You are the router of a healthcare data chatbot. Decide how to answer the user's question.
 
 Available data:
@@ -75,13 +80,14 @@ Choose "kind":
   Set "clarify_question" to one short question, "options" to 2-4 short likely answers, and "option_questions" to the
   complete question each option stands for, e.g.
   {{"Hospitals": "Which hospital has the highest revenue?", "Insurers": "Which insurance company has the highest revenue?"}}.
-  Do not ask when the question has one clear meaning — answer it.
+  Do not ask when the question has one clear meaning — answer it. A question that says what it is about has one
+  ("which insurance company has the highest revenue?" — the insurer's revenue figure).
 Set "assumptions" to what you would have to assume about what the USER MEANS, in short "word = meaning" form
 (e.g. "expensive = the highest total claim cost", "recent = the last 12 months"). Only meanings the user would want
 to decide — not how the data is stored: which column or table to use, or terms the data defines plainly
 (e.g. "died" = deathdate is set, "alive" = deathdate is empty, "diabetes" = a diabetes diagnosis) are NOT assumptions.
 Leave it empty when nothing is assumed — including when the question already states its meaning, e.g. in brackets.
-- "out_of_scope": not answerable from this data (weather, general chit-chat, coding help, personal medical advice).
+{defined}- "out_of_scope": not answerable from this data (weather, general chit-chat, coding help, personal medical advice).
 - "refuse": not allowed for this user (see rules below).
 {patient_rules}
 Set "drugs" to the medicine names written in the question (empty list if none).
