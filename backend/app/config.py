@@ -77,6 +77,10 @@ class Settings(BaseSettings):
 
     data_dir: Path = BACKEND_DIR / "data"
 
+    def ensure_data_dir(self) -> None:
+        """Create the data directory if it doesn't exist (Render's disk is ephemeral)."""
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
     # Conversation memory: where turns are kept and how many recent ones a follow-up may use
     memory_path: Path = BACKEND_DIR / "data" / "memory.sqlite"
     memory_turns: int = 3

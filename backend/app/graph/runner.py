@@ -70,6 +70,7 @@ class ChatResult(BaseModel):
 
 
 def build_deps(settings: Settings) -> Deps:
+    settings.ensure_data_dir()
     engines: dict[DbName, object] = {"clinical": get_engine("clinical"), "billing": get_engine("billing")}
     glossary = load_glossary()
     ledger = usage_ledger(settings)
