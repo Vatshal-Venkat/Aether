@@ -135,13 +135,31 @@ class Settings(BaseSettings):
         ssl = f"?sslmode={quote(self.pg_sslmode, safe='')}" if self.pg_sslmode else ""
         return f"postgresql+psycopg://{quote(user, safe='')}:{quote(pw, safe='')}@{self.pg_host}:{self.pg_port}/clinical_db{ssl}"
 
+    def _resolved_ssl_ca(self) -> str:
+        """Return the absolute path of the MySQL CA cert.
+
+        Render secret files live at /etc/secrets/<name>, but bundling the cert in the repo
+        (backend/aiven-ca.pem) is simpler: set MYSQL_SSL_CA=aiven-ca.pem and this resolves
+        it relative to the backend directory so it always works wherever Render puts the code.
+        Falls back to the raw value when it is already an absolute path.
+        """
+        if not self.mysql_ssl_ca:
+            return ""
+        p = Path(self.mysql_ssl_ca)
+        if not p.is_absolute():
+            candidate = BACKEND_DIR / p
+            if candidate.exists():
+                return str(candidate)
+        return self.mysql_ssl_ca
+
     def billing_url(self, admin: bool = False) -> str:
         """Connection address for MySQL billing_db (read-only user unless admin=True)."""
         user, pw = (self.mysql_admin_user, self.mysql_admin_password) if admin else ("chatbot_ro", self.ro_password)
+        ca = self._resolved_ssl_ca()
         return (
             f"mysql+pymysql://{quote(user, safe='')}:{quote(pw, safe='')}@{self.mysql_host}:{self.mysql_port}"
             "/billing_db?charset=utf8mb4"
-            + (f"&ssl_ca={quote(self.mysql_ssl_ca, safe='')}" if self.mysql_ssl_ca else "")
+            + (f"&ssl_ca={quote(ca, safe='')}" if ca else "")
         )
 
     def cors_origin_list(self) -> list[str]:
