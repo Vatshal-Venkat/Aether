@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from pandas.io.sql import get_schema
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -61,15 +62,28 @@ def load_tables(engine: Engine, kind: str, csv_dir) -> None:
         if target != kind:
             continue
         df = load_table(csv_dir / f"{table}.csv")
+        dtype = sql_dtypes(df)
+        has_id = "id" in df.columns and df["id"].notna().all() and df["id"].is_unique
         if engine.dialect.name == "mysql":
             # MySQL DATETIME has no time zone: store UTC without the zone marker.
             for col in df.columns:
                 if isinstance(df[col].dtype, pd.DatetimeTZDtype):
                     df[col] = df[col].dt.tz_convert(None)
-        df.to_sql(table, engine, if_exists="replace", index=False, chunksize=1000, method="multi",
-                  dtype=sql_dtypes(df))
+            # Cloud MySQL often sets sql_require_primary_key=ON, so a table can't be created
+            # without a key and keyed later. Create it with its key up front; tables with no
+            # usable id get a hidden (INVISIBLE) auto-number key that SELECT * doesn't show.
+            ddl = get_schema(df, table, keys="id" if has_id else None, con=engine, dtype=dtype).rstrip()
+            if not has_id:
+                ddl = ddl[:-1].rstrip() + ",\n\t_row_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY INVISIBLE\n)"
+            with engine.begin() as conn:
+                conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+                conn.execute(text(ddl))
+            df.to_sql(table, engine, if_exists="append", index=False, chunksize=1000, method="multi")
+        else:
+            df.to_sql(table, engine, if_exists="replace", index=False, chunksize=1000, method="multi",
+                      dtype=dtype)
         with engine.begin() as conn:
-            if "id" in df.columns and df["id"].notna().all() and df["id"].is_unique:
+            if has_id and engine.dialect.name != "mysql":
                 conn.execute(text(f"ALTER TABLE {table} ADD PRIMARY KEY (id)"))
             pcol = PATIENT_COLUMN.get(table)
             if pcol and pcol != "id":

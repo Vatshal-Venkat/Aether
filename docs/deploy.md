@@ -22,8 +22,7 @@ Because the Render disk is wiped on restart, chat history, saved queries, the us
 **Aiven (MySQL)**
 1. Create a free MySQL service. Note the host, port, user (`avnadmin`) and password, and download the
    **CA certificate** (`ca.pem`).
-2. In the service's **Advanced configuration**, set `sql_require_primary_key` to **off**. The setup script
-   creates each table first and adds its primary key afterwards, and some tables have none.
+2. No special settings needed — the setup script handles `sql_require_primary_key` automatically.
 
 (TiDB Cloud instead: create a Serverless cluster, note host, port 4000, user and password. Its certificate is
 the normal system one, so no file needs downloading.)
