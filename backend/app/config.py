@@ -26,12 +26,23 @@ class Settings(BaseSettings):
     pg_port: int = 5432
     pg_admin_user: str = "postgres"
     pg_admin_password: str = ""
+    pg_sslmode: str = ""          # cloud Postgres (Neon): "require" — connections must be encrypted
 
     # MySQL — holds billing: providers, insurers, claims (billing_db)
     mysql_host: str = "localhost"
     mysql_port: int = 3306
     mysql_admin_user: str = "root"
     mysql_admin_password: str = ""
+    # Cloud MySQL (Aiven, TiDB): path of the certificate that proves the server is who it says (Aiven: the project's
+    # ca.pem; TiDB: the system bundle /etc/ssl/certs/ca-certificates.crt). Empty = local, no encryption.
+    mysql_ssl_ca: str = ""
+    # Where the read-only account may log in from: "localhost" on your computer, "%" (anywhere) on a cloud
+    # database, because the backend connects from Render.
+    mysql_ro_host: str = "localhost"
+
+    # Websites allowed to call this API from a browser, comma-separated (the Vercel address once deployed).
+    # localhost on any port is always allowed, for development.
+    cors_origins: str = ""
 
     # Port the backend listens on (python -m scripts.serve). The website reads the same AETHER_API_PORT
     # line from this .env file, so changing it here moves both. Default 8000.
@@ -117,7 +128,8 @@ class Settings(BaseSettings):
     def clinical_url(self, admin: bool = False) -> str:
         """Connection address for PostgreSQL clinical_db (read-only user unless admin=True)."""
         user, pw = (self.pg_admin_user, self.pg_admin_password) if admin else ("chatbot_ro", self.ro_password)
-        return f"postgresql+psycopg://{quote(user, safe='')}:{quote(pw, safe='')}@{self.pg_host}:{self.pg_port}/clinical_db"
+        ssl = f"?sslmode={quote(self.pg_sslmode, safe='')}" if self.pg_sslmode else ""
+        return f"postgresql+psycopg://{quote(user, safe='')}:{quote(pw, safe='')}@{self.pg_host}:{self.pg_port}/clinical_db{ssl}"
 
     def billing_url(self, admin: bool = False) -> str:
         """Connection address for MySQL billing_db (read-only user unless admin=True)."""
@@ -125,7 +137,11 @@ class Settings(BaseSettings):
         return (
             f"mysql+pymysql://{quote(user, safe='')}:{quote(pw, safe='')}@{self.mysql_host}:{self.mysql_port}"
             "/billing_db?charset=utf8mb4"
+            + (f"&ssl_ca={quote(self.mysql_ssl_ca, safe='')}" if self.mysql_ssl_ca else "")
         )
+
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

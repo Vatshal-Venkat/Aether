@@ -34,9 +34,11 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
         yield
 
     app = FastAPI(title="Aether — healthcare multi-database chatbot", version="0.1.0", lifespan=lifespan)
-    # Let the future React app (served from localhost on any port) call this API.
+    # Let the website call this API: from localhost on any port (development), and from the addresses in
+    # CORS_ORIGINS (the deployed website, e.g. on Vercel).
     app.add_middleware(
         CORSMiddleware,
+        allow_origins=get_settings().cors_origin_list(),
         allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],

@@ -1,0 +1,54 @@
+# Render blueprint for the Aether backend (free web service). Render → New → Blueprint → pick this repo.
+# Secrets are marked "sync: false": Render asks for them once, they are never stored in git.
+# Step-by-step guide: docs/deploy.md
+services:
+  - type: web
+    name: aether-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    # The drug-label library (backend/chroma) is not in git: build it from openFDA on every deploy (~3-5 min).
+    buildCommand: pip install -r requirements.txt && python -m scripts.build_drug_index
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: RAG_RERANK            # the reranker needs ~370 MB more than the free 512 MB allows
+        value: "false"
+      - key: LLM_PROVIDER
+        value: groq
+      # PostgreSQL on Neon (use the DIRECT host, not the "-pooler" one)
+      - key: PG_HOST
+        sync: false
+      - key: PG_PORT
+        value: "5432"
+      - key: PG_ADMIN_USER
+        sync: false
+      - key: PG_ADMIN_PASSWORD
+        sync: false
+      - key: PG_SSLMODE
+        value: require
+      # MySQL (Aiven or TiDB Cloud)
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_PORT
+        sync: false
+      - key: MYSQL_ADMIN_USER
+        sync: false
+      - key: MYSQL_ADMIN_PASSWORD
+        sync: false
+      - key: MYSQL_SSL_CA          # Aiven: /etc/secrets/aiven-ca.pem (a Render "secret file"); TiDB: /etc/ssl/certs/ca-certificates.crt
+        sync: false
+      - key: MYSQL_RO_HOST
+        value: "%"
+      - key: RO_PASSWORD
+        sync: false
+      - key: RLS_SECRET            # must be the same value you used when running setup_databases
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS          # your Vercel address, e.g. https://aether.vercel.app
+        sync: false

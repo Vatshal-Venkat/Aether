@@ -133,3 +133,25 @@ describe("result pages: the backend's own explanation is shown (final review)", 
     expect(err.userMessage).toBe("page must be between 1 and 3");
   });
 });
+
+// Deployment (2026-11-25): the website on Vercel and the backend on Render live at different addresses.
+describe("deployed backend address", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("sends every request to VITE_API_URL when it is set", async () => {
+    vi.stubEnv("VITE_API_URL", "https://aether-api.onrender.com/");
+    const fetchMock = vi.fn().mockResolvedValue(ok([]));
+    vi.stubGlobal("fetch", fetchMock);
+    await getPatients();
+    await getHealth().catch(() => undefined);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://aether-api.onrender.com/api/patients");
+    expect(fetchMock.mock.calls[1][0]).toBe("https://aether-api.onrender.com/health");
+  });
+
+  it("says the backend is unreachable without naming a local port", async () => {
+    vi.stubEnv("VITE_API_URL", "https://aether-api.onrender.com");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const err = await getPatients().catch((e) => e);
+    expect(err.userMessage).toBe("Can't reach the Aether backend. It may be waking up — try again in a minute.");
+  });
+});

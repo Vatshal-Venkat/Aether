@@ -39,3 +39,25 @@ def test_rls_only_flag_skips_data_load(monkeypatch):
                                                                   mysql_admin_password="b", ro_password="c"))
     assert sd.main(["--rls-only"]) == 0
     assert calls == ["rls"]
+
+
+# Deployment (2026-11-25): on cloud MySQL the backend logs in from Render, not from the database's own machine,
+# so the read-only account must accept any host ('%'). Locally it stays 'localhost'.
+def _ro_statements(**settings):
+    from unittest.mock import MagicMock
+    from app.config import Settings
+    from scripts.setup_databases import create_readonly_users
+    pg, my = MagicMock(), MagicMock()
+    s = Settings(_env_file=None, pg_admin_password="a", mysql_admin_password="b", ro_password="ro", **settings)
+    create_readonly_users(s, pg, my)
+    conn = my.begin.return_value.__enter__.return_value
+    return [str(c.args[0]) for c in conn.execute.call_args_list]
+
+
+def test_readonly_mysql_account_is_local_by_default():
+    assert all("'chatbot_ro'@'localhost'" in s for s in _ro_statements())
+
+
+def test_readonly_mysql_account_can_log_in_from_the_cloud_host():
+    statements = _ro_statements(mysql_ro_host="%")
+    assert all("'chatbot_ro'@'%'" in s for s in statements) and len(statements) == 3

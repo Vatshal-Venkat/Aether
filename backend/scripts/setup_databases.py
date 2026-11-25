@@ -86,10 +86,11 @@ def create_readonly_users(s: Settings, pg: Engine, my: Engine) -> None:
         conn.execute(text(f"GRANT CONNECT ON DATABASE clinical_db TO {RO_USER}"))
         conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {RO_USER}"))
         conn.execute(text(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {RO_USER}"))
+    host = s.mysql_ro_host.replace("'", "")  # 'localhost' on your computer; '%' (any host) on a cloud database
     with my.begin() as conn:
-        conn.execute(text(f"CREATE USER IF NOT EXISTS '{RO_USER}'@'localhost' IDENTIFIED BY :pw"), {"pw": s.ro_password})
-        conn.execute(text(f"ALTER USER '{RO_USER}'@'localhost' IDENTIFIED BY :pw"), {"pw": s.ro_password})
-        conn.execute(text(f"GRANT SELECT ON billing_db.* TO '{RO_USER}'@'localhost'"))
+        conn.execute(text(f"CREATE USER IF NOT EXISTS '{RO_USER}'@'{host}' IDENTIFIED BY :pw"), {"pw": s.ro_password})
+        conn.execute(text(f"ALTER USER '{RO_USER}'@'{host}' IDENTIFIED BY :pw"), {"pw": s.ro_password})
+        conn.execute(text(f"GRANT SELECT ON billing_db.* TO '{RO_USER}'@'{host}'"))
     print(f"  read-only user '{RO_USER}' ready in both databases")
 
 

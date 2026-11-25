@@ -15,7 +15,21 @@ export class ApiError extends Error {
   }
 }
 
-const UNREACHABLE = `Can't reach the Aether backend. Is it running on port ${__AETHER_API_PORT__}?`;
+// Where the backend is. Locally: empty, and the dev server forwards /api and /health (vite.config.ts). Deployed:
+// VITE_API_URL, set when the website is built (on Vercel: the backend's Render address).
+function apiBase(): string {
+  return (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
+}
+
+function api(path: string): string {
+  return `${apiBase()}${path}`;
+}
+
+function unreachable(): string {
+  return apiBase()
+    ? "Can't reach the Aether backend. It may be waking up — try again in a minute."  // Render's free tier sleeps
+    : `Can't reach the Aether backend. Is it running on port ${__AETHER_API_PORT__}?`;
+}
 const INTERRUPTED = "The connection to the backend was interrupted before the answer arrived. Please try again.";
 
 async function messageFor(response: Response): Promise<string> {
@@ -47,10 +61,10 @@ async function messageFor(response: Response): Promise<string> {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(api(url), init);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new ApiError(0, UNREACHABLE);
+    throw new ApiError(0, unreachable());
   }
   if (!response.ok) throw new ApiError(response.status, await messageFor(response));
   return (await response.json()) as T;
@@ -74,7 +88,7 @@ export async function askChatStream(
 ): Promise<ChatResult> {
   let response: Response;
   try {
-    response = await fetch("/api/chat/stream", {
+    response = await fetch(api("/api/chat/stream"), {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify(req),
@@ -82,7 +96,7 @@ export async function askChatStream(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    throw new ApiError(0, UNREACHABLE);
+    throw new ApiError(0, unreachable());
   }
   if (!response.ok) throw new ApiError(response.status, await messageFor(response));
   if (!response.body) throw new ApiError(0, INTERRUPTED);
