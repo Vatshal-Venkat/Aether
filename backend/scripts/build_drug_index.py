@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reset", action="store_true", help="delete the library and rebuild it")
     args = parser.parse_args(argv)
     s = get_settings()
+    s.ensure_data_dir()
+    (s.data_dir / "drug_labels").mkdir(parents=True, exist_ok=True)
 
     engine = create_engine(s.clinical_url(admin=True))
     with engine.connect() as conn:
