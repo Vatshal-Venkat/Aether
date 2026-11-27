@@ -32,20 +32,6 @@ async def _keep_alive(url: str) -> None:
                 pass
 
 
-def _build_drug_index_background(app: FastAPI) -> None:
-    """Build the drug-label ChromaDB index in a background thread, then hot-swap it into deps."""
-    try:
-        from scripts.build_drug_index import main as build_main
-        build_main([])
-        from app.rag.store import DrugLabelStore
-        store = DrugLabelStore.open(get_settings().chroma_dir)
-        if store and app.state.deps:
-            app.state.deps.store = store
-            log.info("Drug-label index ready: %d chunks", store.count())
-    except Exception:  # noqa: BLE001
-        log.exception("Background drug-index build failed")
-
-
 def create_app(with_pipeline: bool = True) -> FastAPI:
     """Build the app. with_pipeline=False skips building the AI pipeline (used by lightweight tests)."""
 
@@ -62,10 +48,6 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
                 app.state.deps_error = str(exc).splitlines()[0][:200]
                 log.error("Chat pipeline not started: %s", app.state.deps_error)
 
-        build_task = None
-        if with_pipeline and app.state.deps and app.state.deps.store is None:
-            build_task = asyncio.create_task(asyncio.to_thread(_build_drug_index_background, app))
-
         render_url = os.environ.get("RENDER_EXTERNAL_URL")
         keep_alive_task = None
         if render_url:
@@ -75,8 +57,6 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
 
         if keep_alive_task:
             keep_alive_task.cancel()
-        if build_task:
-            build_task.cancel()
 
     app = FastAPI(title="Aether — healthcare multi-database chatbot", version="0.1.0", lifespan=lifespan)
     # Let the website call this API: from localhost on any port (development), and from the addresses in

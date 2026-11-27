@@ -4,7 +4,7 @@ backend/.env
 
 # Downloaded / generated data
 backend/data/
-backend/chroma/
+# backend/chroma/ is committed so Render doesn't need to rebuild it on deploy
 
 # Python
 .venv/
