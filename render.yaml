@@ -7,7 +7,7 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    # The drug-label library (backend/chroma) is not in git: build it from openFDA on every deploy (~3-5 min).
+    # The drug-label library (backend/chroma) is committed, so nothing is built on deploy.
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -15,7 +15,8 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.7
       - key: RAG_RERANK            # the reranker needs ~370 MB more than the free 512 MB allows
-        value: "false"      - key: LLM_PROVIDER
+        value: "false"
+      - key: LLM_PROVIDER
         value: groq
       # PostgreSQL on Neon (use the DIRECT host, not the "-pooler" one)
       - key: PG_HOST
