@@ -5,9 +5,9 @@
 
 import { motion } from "motion/react";
 import { useState } from "react";
-import type { ChatResult } from "../../api/types";
+import type { ChatResult, DocumentRef } from "../../api/types";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
-import { renderMarkdown } from "../../lib/markdown";
+import { type LabelLink, renderMarkdown } from "../../lib/markdown";
 import { cleanNames } from "../../lib/names";
 import { AnswerOrb } from "../orbs/AnswerOrb";
 import { Disclosures, type Panel } from "./Disclosure";
@@ -36,6 +36,31 @@ export function cleanAnswer(text: string, hasSources: boolean): string {
   return out;
 }
 
+/** "openFDA label: Hydrochlorothiazide — Side effects" -> "Hydrochlorothiazide". */
+export const labelDrug = (label: string) => label.replace(/^openFDA label: /, "").split(" — ")[0].trim();
+
+/** One link per drug (its first label), for the "label ↗" links in the answer text. */
+export function labelLinks(documents: DocumentRef[]): LabelLink[] {
+  const seen = new Map<string, LabelLink>();
+  for (const d of documents) {
+    const name = labelDrug(d.label);
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), { name, url: d.source_url });
+  }
+  return [...seen.values()];
+}
+
+/** Labels of drugs the answer names come first, in the order the answer names them; the rest keep their order. */
+export function mentionedFirst(documents: DocumentRef[], answer: string): DocumentRef[] {
+  const text = answer.toLowerCase();
+  const position = (d: DocumentRef) => {
+    const name = labelDrug(d.label).toLowerCase();
+    const first = name.split(/\s+/)[0];
+    const at = [name, ...(first.length >= 5 ? [first] : [])].map((n) => text.indexOf(n)).filter((i) => i >= 0);
+    return at.length ? Math.min(...at) : Infinity;
+  };
+  return documents.map((d, i) => ({ d, i, p: position(d) })).sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.d);
+}
+
 export function AnswerCard({ result, onOption, owner }: { result: ChatResult; onOption?: (option: string) => void; owner?: Owner }) {
   const reduced = useReducedMotion();
   const [declined, setDeclined] = useState(false);
@@ -61,13 +86,15 @@ export function AnswerCard({ result, onOption, owner }: { result: ChatResult; on
     if (spec) panels.push({ id: "chart", title: "Chart", content: <Chart spec={spec} /> });
   }
   if (result.documents.length) {
-    panels.push({ id: "labels", title: "Labels", count: String(result.documents.length), content: <LabelList documents={result.documents} /> });
+    panels.push({ id: "labels", title: "Labels", count: String(result.documents.length),
+      content: <LabelList documents={mentionedFirst(result.documents, result.answer)} /> });
   }
   if (Object.keys(result.timings).length) panels.push({ id: "timeline", title: "Timeline", content: <Timeline timings={result.timings} /> });
 
   // Word-by-word reveal (the full text is in the page from the start). With "reduce motion" on, the answer
   // appears at once: no word spans at all (final review, Plan 4).
-  const blocks = renderMarkdown(cleanNames(cleanAnswer(result.answer, result.sources.length > 0)), { reveal: !reduced });
+  const blocks = renderMarkdown(cleanNames(cleanAnswer(result.answer, result.sources.length > 0)),
+    { reveal: !reduced, labels: labelLinks(result.documents) });
   return (
     <article className="answer" data-kind={result.kind}>
       <AnswerOrb kind={result.kind} />
