@@ -91,6 +91,8 @@ Leave it empty when nothing is assumed — including when the question already s
 - "refuse": not allowed for this user (see rules below).
 {patient_rules}
 Set "drugs" to the medicine names written in the question (empty list if none).
+Set "conditions" to the diseases/diagnoses written in the question, in the user's own words (e.g. "high blood
+pressure", "heart attack"; empty list if none).
 For "rag" and "hybrid", set "search_queries" to 1-2 short searches for the FDA drug labels, written the way a label
 words it: medical terms instead of everyday words, and the label section if one fits (e.g. "can I take lisinopril
 while pregnant?" -> ["lisinopril use in pregnancy fetal toxicity"]; "does metformin make you dizzy?" ->

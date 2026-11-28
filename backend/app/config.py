@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     rag_top_k: int = 6          # passages for a general drug question
     rag_per_drug_k: int = 3     # passages per named medicine (fewer when many medicines are involved)
     rag_max_drugs: int = 12     # most medicines looked up for one question
+    rag_live_fallback: bool = True  # fetch a label from openFDA when the library lacks it (or isn't built)
+
+    # Terminology MCP server (app/terminology): condition words -> official names for the SQL writer.
+    # URL empty = use Aether's own server in-process. The backend also serves it to outside clients at /mcp.
+    terminology_mcp: bool = True
+    terminology_mcp_url: str = ""
     rag_max_chunks: int = 18    # total passages budget for one answer
     # Reranker (app/rag/rerank.py): fetch a few more passages than needed, keep the ones that best answer the question
     rag_query_rewrite: bool = True  # also search with the router's label-wording rewrites of the question

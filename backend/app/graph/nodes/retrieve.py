@@ -35,6 +35,7 @@ import re
 from app.graph.deps import Deps
 from app.graph.state import ChatState
 from app.graph.timing import timed
+from app.rag.live import live_chunks
 
 # Question wording -> label sections. Every match counts ("warnings and side effects" -> both).
 # A question about warnings also reads the boxed warning — the most serious warning of all.
@@ -131,13 +132,40 @@ def _pool(settings, k: int, searches: int) -> int:
     return min(k * settings.rag_rerank_pool, max(k, settings.rag_rerank_max_candidates // max(1, searches)))
 
 
+def _row_medication_names(state: ChatState) -> list[str]:
+    """Medication descriptions in the SQL rows (used when there is no library to match them against)."""
+    result = state.get("result")
+    if not result:
+        return []
+    cols = [i for i, c in enumerate(result.columns) if MEDICATION_COLUMNS.search(c)]
+    return list(dict.fromkeys(row[i] for row in result.rows for i in cols if isinstance(row[i], str)))
+
+
+def _live(state: ChatState, deps: Deps, names: list[str], sections: list[str]) -> dict | None:
+    """Answer from labels fetched live from openFDA, or None when none were found."""
+    if not deps.settings.rag_live_fallback or not names:
+        return None
+    names = list(dict.fromkeys(names))[: deps.settings.rag_max_drugs]
+    chunks, missing = live_chunks(names, sections or None, deps.settings.data_dir / "drug_labels_live")
+    if not chunks:
+        return None
+    note = f"Labels fetched live from openFDA for: {', '.join(dict.fromkeys(c.drug for c in chunks))}."
+    if missing:
+        note += f" No FDA label found for: {', '.join(missing)}."
+    labels = list(dict.fromkeys(c.label for c in chunks))
+    sources = list(dict.fromkeys([*(state.get("sources") or []), *labels]))
+    return {"chunks": chunks[: deps.settings.rag_max_chunks], "rag_problem": None, "sources": sources,
+            "rag_note": note}
+
+
 @timed("retrieve")
 def retrieve(state: ChatState, deps: Deps) -> dict:
     store, settings = deps.store, deps.settings
-    if store is None:
-        return {"chunks": [], "rag_problem": "no_index"}
     route = state["route"]
     question = state["question"]
+    if store is None:
+        names = [*route.drugs, *(_row_medication_names(state) if route.kind == "hybrid" else [])]
+        return _live(state, deps, names, section_of(question)) or {"chunks": [], "rag_problem": "no_index"}
     named = store.drugs_in_text(" ".join([question, *route.drugs]))
     unlabeled = [d for d in route.drugs if not store.drugs_in_text(d)]
     row_drugs, row_unlabeled = _row_medicines(state, deps) if route.kind == "hybrid" else ([], [])
@@ -188,8 +216,8 @@ def retrieve(state: ChatState, deps: Deps) -> dict:
             return {"chunks": [], "rag_problem": "missing_section", "rag_message": message}
     elif route.kind == "hybrid":
         chunks = []  # the person's records mention no medicine from the library: answer from the rows
-    elif route.drugs:
-        return {"chunks": [], "rag_problem": "unknown_drug"}  # names only medicines we don't have
+    elif route.drugs:  # names only medicines we don't have: try openFDA live
+        return _live(state, deps, route.drugs, sections) or {"chunks": [], "rag_problem": "unknown_drug"}
     else:
         found = _search(deps, question, queries, None, settings.rag_top_k, sections or None,
                         _pool(settings, settings.rag_top_k, len(queries)))

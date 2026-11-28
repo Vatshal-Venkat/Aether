@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import catalog_routes, chat, health, ops_routes
 from app.config import get_settings
+from app.terminology.server import mcp as terminology_mcp
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ async def _keep_alive(url: str) -> None:
 
 def create_app(with_pipeline: bool = True) -> FastAPI:
     """Build the app. with_pipeline=False skips building the AI pipeline (used by lightweight tests)."""
+    # The terminology MCP server, for outside MCP clients (Claude Desktop, Inspector) at /mcp. Public data only.
+    mcp_app = terminology_mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True)
+    mcp_sessions = terminology_mcp.session_manager  # one per app: it can only be started once
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -49,11 +53,10 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
                 log.error("Chat pipeline not started: %s", app.state.deps_error)
 
         render_url = os.environ.get("RENDER_EXTERNAL_URL")
-        keep_alive_task = None
-        if render_url:
-            keep_alive_task = asyncio.create_task(_keep_alive(render_url))
+        keep_alive_task = asyncio.create_task(_keep_alive(render_url)) if render_url else None
 
-        yield
+        async with mcp_sessions.run():
+            yield
 
         if keep_alive_task:
             keep_alive_task.cancel()
@@ -72,6 +75,7 @@ def create_app(with_pipeline: bool = True) -> FastAPI:
     app.include_router(chat.router)
     app.include_router(catalog_routes.router)
     app.include_router(ops_routes.router)
+    app.mount("/", mcp_app)  # last: only serves /mcp, everything else above takes precedence
     return app
 
 

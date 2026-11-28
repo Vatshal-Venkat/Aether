@@ -17,6 +17,7 @@ from app.graph.state import ChatState
 from app.graph.steps import current_step
 from app.graph.timing import timed
 from app.semantic.glossary import Term
+from app.terminology.client import render_hints
 
 MAX_TABLES = 6
 STOPWORDS = {"the", "and", "for", "with", "what", "which", "how", "many", "are", "was", "were", "has", "have",
@@ -81,4 +82,8 @@ def inject_schema(state: ChatState, deps: Deps) -> dict:
     text = deps.catalog.render(chosen, hidden=hidden)
     if terms:
         text += "\n\nGLOSSARY:\n" + "\n".join(f"- {t.term}: {t.meaning} SQL hint: {t.sql_hint}" for t in terms)
+    if deps.terminology and route and route.conditions and step.db == "clinical":
+        hints = render_hints(deps.terminology.lookup(route.conditions))
+        if hints:
+            text += "\n\n" + hints
     return {"schema_text": text}

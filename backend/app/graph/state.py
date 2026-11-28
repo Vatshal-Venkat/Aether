@@ -21,6 +21,7 @@ class RouteDecision(BaseModel):
     databases: list[DbName] = []
     reason: str = ""
     drugs: list[str] = []  # medicine names the router saw in the question (for drug-label lookups)
+    conditions: list[str] = []  # condition/diagnosis words in the question, as written (for terminology lookups)
     clarify_question: str = ""  # kind "clarify": the short question to ask back
     options: list[str] = []     # kind "clarify": 2-4 likely answers the person can click
     # Optional: the exact question each option sends ("" = sends nothing; the person asks again). Used by the

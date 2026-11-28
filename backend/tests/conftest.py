@@ -18,6 +18,7 @@ def _isolate_ai_env(monkeypatch):
     """Tests must not depend on AI keys/settings set in the developer's OS environment."""
     for var in ("GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_PROVIDER"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("RAG_LIVE_FALLBACK", "false")  # no live openFDA calls; tests/rag/test_live.py turns it on
 
 
 @pytest.fixture

@@ -15,6 +15,7 @@ from app.memory.store import ConversationStore
 from app.rag.rerank import Reranker
 from app.rag.store import DrugLabelStore
 from app.semantic.glossary import Glossary
+from app.terminology.client import TerminologyClient
 
 
 @dataclass
@@ -33,3 +34,4 @@ class Deps:
     saved_queries: SavedQueryStore | None = None   # same question -> same SQL (None = always write it afresh)
     reranker: Reranker | None = None                 # re-scores drug-label passages (None = keep the search order)
     fast_llm: Runnable | None = None                 # fast model for routing/contextualizing (None = uses llm)
+    terminology: TerminologyClient | None = None     # condition words -> official names, via MCP (None = off)

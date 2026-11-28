@@ -33,6 +33,7 @@ from app.llm.client import (MODELS_USED_KEY, LLMOutputError, _transient_errors, 
                             get_chat_model, get_fast_model, model_name, usage_ledger)
 from app.llm.prompts import CONTEXTUALIZE_SYSTEM, plan_system, route_system, sql_system
 from app.semantic.glossary import GLOSSARY_PATH, load_glossary
+from app.terminology.client import TerminologyClient
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ def build_deps(settings: Settings) -> Deps:
     engines: dict[DbName, object] = {"clinical": get_engine("clinical"), "billing": get_engine("billing")}
     glossary = load_glossary()
     ledger = usage_ledger(settings)
+    model = embedding_model()  # ONE copy (~110 MB) shared by the drug library and saved queries: Render has 512 MB
     return Deps(
         settings=settings,
         llm=get_chat_model(settings, ledger),
@@ -83,27 +85,35 @@ def build_deps(settings: Settings) -> Deps:
         catalog=build_catalog(engines, glossary),
         glossary=glossary,
         engines=engines,
-        store=DrugLabelStore.open(settings.chroma_dir),  # None if not built: SQL questions still work
+        store=DrugLabelStore.open(settings.chroma_dir, embedding_function=model),  # None if not built
         reranker=load_reranker(settings),  # None if switched off or unavailable: passages keep the search order
         memory=ConversationStore(settings.memory_path),  # conversation turns, for follow-up questions
-        saved_queries=(SavedQueryStore(settings.saved_queries_path, saved_queries_version(glossary), question_embedder())
+        saved_queries=(SavedQueryStore(settings.saved_queries_path, saved_queries_version(glossary), question_embedder(model))
                        if settings.saved_queries else None),  # same question -> same SQL -> same numbers
         patient_names={p["id"]: p["name"] for p in list_patients(engines["clinical"])},
         provider_names=list_provider_names(engines["billing"]),
+        terminology=(TerminologyClient(settings.terminology_mcp_url or None) if settings.terminology_mcp else None),
     )
 
 
-def question_embedder():
-    """The small local model (all-MiniLM-L6-v2, already used by the drug-label library) that scores how alike two
-    questions are, for reworded questions. Loaded on first use; None if unavailable (exact matches still work)."""
+def embedding_model():
+    """The small local model (all-MiniLM-L6-v2), loaded on first use. ChromaDB's "default" function — the one the
+    drug library was built with, so it can be handed to it without a conflict. None if unavailable."""
     try:
-        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+        from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
-        model = ONNXMiniLM_L6_V2()
-        return lambda texts: [list(map(float, v)) for v in model(list(texts))]
+        return DefaultEmbeddingFunction()
     except Exception:  # noqa: BLE001
+        log.warning("embedding model unavailable")
+        return None
+
+
+def question_embedder(model):
+    """Scores how alike two questions are, for reworded questions; None if no model (exact matches still work)."""
+    if model is None:
         log.warning("question matching model unavailable; only exact repeat questions reuse saved queries")
         return None
+    return lambda texts: [list(map(float, v)) for v in model(list(texts))]
 
 
 def saved_queries_version(glossary) -> str:
