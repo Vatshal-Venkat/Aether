@@ -7,6 +7,7 @@ hard-coding anything.
 """
 
 import hashlib
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -124,7 +125,9 @@ class Settings(BaseSettings):
     rag_relevance_threshold: bool = True
     rag_min_score: float = -5.0      # reranker score (higher = more relevant)
     rag_max_distance: float = 0.75   # search distance, when the reranker is off (lower = closer)
-    rag_rerank: bool = True
+    # Off by default on Render (it sets RENDER=true): the reranker model doesn't fit in the free 512 MB alongside the
+    # search model. RAG_RERANK=true/false still overrides.
+    rag_rerank: bool = Field(default_factory=lambda: not os.environ.get("RENDER"))
     rag_rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     rag_rerank_pool: int = 3            # candidates fetched per passage kept (3 -> 18 read for a top 6)
     rag_rerank_max_candidates: int = 36  # cap on passages read per question (keeps it under about 2 s)
