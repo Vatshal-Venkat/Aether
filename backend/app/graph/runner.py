@@ -117,7 +117,21 @@ def embedding_model():
 
             lean_session_options._aether_lean = True
             ort.SessionOptions = lean_session_options
-        return DefaultEmbeddingFunction()
+
+        class SharedDefaultEmbedding(DefaultEmbeddingFunction):
+            """ChromaDB's DefaultEmbeddingFunction builds a NEW model on every call (~90 MB, ~400 ms); on Linux the
+            freed memory isn't returned, so each drug question grew the process until Render killed it. Same name
+            ("default", so the library opens without a conflict), one model kept for good."""
+
+            def __init__(self):
+                super().__init__()
+                from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+                self._onnx = ONNXMiniLM_L6_V2()
+
+            def __call__(self, input):
+                return self._onnx(input)
+
+        return SharedDefaultEmbedding()
     except Exception:  # noqa: BLE001
         log.warning("embedding model unavailable")
         return None
