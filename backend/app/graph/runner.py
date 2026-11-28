@@ -100,8 +100,23 @@ def embedding_model():
     """The small local model (all-MiniLM-L6-v2), loaded on first use. ChromaDB's "default" function — the one the
     drug library was built with, so it can be handed to it without a conflict. None if unavailable."""
     try:
+        import onnxruntime as ort
         from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
+        # ChromaDB builds the ONNX session with default options: a thread (and buffers) per CPU core plus a growing
+        # memory pool. On Render's 512 MB that pushed us out of memory. One thread, no pool: same results.
+        if not getattr(ort.SessionOptions, "_aether_lean", False):
+            original = ort.SessionOptions
+
+            def lean_session_options():
+                so = original()
+                so.intra_op_num_threads = 1
+                so.inter_op_num_threads = 1
+                so.enable_cpu_mem_arena = False
+                return so
+
+            lean_session_options._aether_lean = True
+            ort.SessionOptions = lean_session_options
         return DefaultEmbeddingFunction()
     except Exception:  # noqa: BLE001
         log.warning("embedding model unavailable")
